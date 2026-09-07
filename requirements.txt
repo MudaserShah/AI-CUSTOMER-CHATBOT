@@ -1,0 +1,10 @@
+fastapi
+pydantic
+python-dotenv
+openai
+uvicorn
+langchain_community
+langchain_huggingface
+langchain_openai
+qdrant_client
+pyPDF
