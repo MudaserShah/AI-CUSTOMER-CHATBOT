@@ -27,8 +27,6 @@ from rag.schemas import (
 router = APIRouter()
 
 
-# ─── Documents ────────────────────────────────────────────────────────────────
-
 @router.post(
     "/upload",
     response_model=UploadFilesResponse,
@@ -82,8 +80,6 @@ router.add_api_route(
 )
 
 
-# ─── RAG ──────────────────────────────────────────────────────────────────────
-
 router.add_api_route(
     "/query",
     endpoint=query,
@@ -101,8 +97,6 @@ router.add_api_route(
     summary="Query Stream Endpoint",
 )
 
-
-# ─── Files & Health ───────────────────────────────────────────────────────────
 
 @router.get("/files/{doc_id}/markdown", response_model=FileContentResponse, tags=["Files"])
 def get_markdown_route(doc_id: str):

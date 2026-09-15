@@ -50,7 +50,6 @@ def get_embeddings_dep():
 def get_llm() -> ChatOpenAI:
     return app_state["llm"]
 
-# ─────────────────────────────────────────────────────────────────────────────
 
 def health() -> dict:
     return {
