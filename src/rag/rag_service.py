@@ -337,16 +337,19 @@ def index_document(
     }
 
 
-def query_with_citations(
+def retrieve_with_citations(
     question: str,
     top_k: int,
     client: QdrantClient,
     embeddings,
-    llm: ChatOpenAI,
     collection_name: str,
 ) -> dict:
     """
-    Search Qdrant and generate an answer with citations.
+    RETRIEVAL-ONLY half of the pipeline.
+
+    Search Qdrant and build citations + context string.
+    Does NOT call the LLM — this is what the retriever eval
+    (ContextualRecall / ContextualPrecision) should exercise.
 
     Flow:
 
@@ -359,10 +362,6 @@ def query_with_citations(
         Relevant Chunks
             ↓
         Context
-            ↓
-        LLM
-            ↓
-        Answer + References
     """
 
     if not collection_exists(
@@ -375,8 +374,9 @@ def query_with_citations(
                 "Please upload a file first."
             ),
             "references": [],
+            "context": "",
+            "done": True,   # signal: caller should stop, nothing to generate
         }
-
 
     query_vector = embeddings.embed_query(
         question
@@ -397,6 +397,8 @@ def query_with_citations(
                 "in the uploaded documents."
             ),
             "references": [],
+            "context": "",
+            "done": True,
         }
 
     citations: List[Citation] = []
@@ -456,20 +458,52 @@ def query_with_citations(
         context_parts
     )
 
+    return {
+        "answer": None,       # not generated yet
+        "references": citations,
+        "context": context,
+        "done": False,
+    }
+
+
+def generate_from_context(
+    question: str,
+    context: str,
+    llm: ChatOpenAI,
+) -> str:
+    """
+    GENERATION-ONLY half of the pipeline.
+
+    Takes a question + an already-built context string and calls the LLM.
+    Does NOT touch Qdrant — this is what the generator eval
+    (Faithfulness / AnswerRelevancy) should exercise in isolation,
+    by feeding it golden context instead of live retrieval.
+    """
 
     prompt = ChatPromptTemplate.from_template(
-        """
+         """
 You are a precise document analyst.
 
-Answer the user's question using ONLY the context below.
+Answer ONLY what the user explicitly asked. Do not add related facts,
+extra conditions, exceptions, or background information unless the
+user's question specifically asks for them.
 
-Do not use outside knowledge.
+Rules:
+1. Use ONLY the context below. Never use outside knowledge, and never
+   state a fact, number, or status that does not literally appear in
+   the context, even if it seems obvious or standard.
+2. Identify exactly what the question is asking (a fact, a list, a
+   yes/no, a process, a definition) and answer only that. If the
+   question asks "what/which/how much", give that single answer without
+   appending other details from the context that were not asked for.
+3. Do not pad the answer with caveats, exceptions, or "additionally..."
+   information the user did not request. If the context contains
+   related-but-unasked-for details, leave them out.
+4. Keep the answer as short as fully answering the question allows.
+5. Do not mention file names or page numbers. Those are shown separately
+   as citations.
 
-Do not mention file names or page numbers in your answer.
-Those will be shown separately as citations.
-
-If the answer cannot be found in the context, say:
-
+If the answer cannot be found in the context, say exactly:
 "I couldn't find that in the uploaded documents."
 
 Context:
@@ -482,25 +516,58 @@ Answer:
 """
     )
 
-
     chain = (
         prompt
         | llm
         | StrOutputParser()
     )
 
-
-    answer = chain.invoke(
+    return chain.invoke(
         {
             "context": context,
             "question": question,
         }
     )
-                
+
+
+def query_with_citations(
+    question: str,
+    top_k: int,
+    client: QdrantClient,
+    embeddings,
+    llm: ChatOpenAI,
+    collection_name: str,
+) -> dict:
+    """
+    Full pipeline — unchanged behavior/signature/return shape.
+    Now just composes the two halves above, so production code
+    (routes.py etc.) needs ZERO changes.
+    """
+
+    retrieval = retrieve_with_citations(
+        question=question,
+        top_k=top_k,
+        client=client,
+        embeddings=embeddings,
+        collection_name=collection_name,
+    )
+
+    if retrieval["done"]:
+        # early-exit case: no collection or no hits — same fallback messages as before
+        return {
+            "answer": retrieval["answer"],
+            "references": retrieval["references"],
+        }
+
+    answer = generate_from_context(
+        question=question,
+        context=retrieval["context"],
+        llm=llm,
+    )
 
     return {
         "answer": answer,
-        "references": citations,
+        "references": retrieval["references"],
     }
 
 async def query_stream(

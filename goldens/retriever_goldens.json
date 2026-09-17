@@ -1,0 +1,122 @@
+[
+  {
+    "id": "g001",
+    "query": "What is your refund policy?",
+    "ideal_answer": "Customers may request a refund or return within 7 days of the delivery date. The item must be unused, in its original packaging, with all accessories, manuals, and the original invoice included. Items showing signs of use, missing accessories, or damaged packaging may only be eligible for a partial refund at TechNest's discretion.",
+    "source": "customer_support_knowledge_base.md - Section 2.1"
+  },
+  {
+    "id": "g002",
+    "query": "Can I return earphones once I've opened them?",
+    "ideal_answer": "No, earphones and earbuds are not eligible for return or refund once the seal is broken, except in cases of manufacturing defect, because they come into direct contact with the ear.",
+    "source": "customer_support_knowledge_base.md - Section 2.2"
+  },
+  {
+    "id": "g003",
+    "query": "How long does it take to get my refund back on my card?",
+    "ideal_answer": "Refunds to credit or debit cards take 5 to 10 business days to reflect, depending on the issuing bank. Refunds to TechNest Wallet are instant, and cash-on-delivery refunds go through a bank transfer that takes 3 to 5 business days after the customer provides their IBAN.",
+    "source": "customer_support_knowledge_base.md - Section 2.3"
+  },
+  {
+    "id": "g004",
+    "query": "What happens if my item arrives damaged?",
+    "ideal_answer": "If an item arrives damaged or defective, the customer must report it within 48 hours of delivery with photos or a short video. TechNest covers full return shipping and the customer can choose a free replacement (subject to stock), a full refund, or store credit with a 5% bonus value.",
+    "source": "customer_support_knowledge_base.md - Section 2.5"
+  },
+  {
+    "id": "g005",
+    "query": "How long does delivery take to Lahore?",
+    "ideal_answer": "Delivery to major cities including Lahore, Karachi, and Islamabad takes 1 to 2 business days.",
+    "source": "customer_support_knowledge_base.md - Section 3.1"
+  },
+  {
+    "id": "g006",
+    "query": "Do I have to pay for shipping?",
+    "ideal_answer": "Standard shipping within Pakistan is free for orders above PKR 5,000. Orders below this threshold incur a flat PKR 250 shipping fee, and express next-day delivery in major cities costs an additional PKR 500.",
+    "source": "customer_support_knowledge_base.md - Section 3.2"
+  },
+  {
+    "id": "g007",
+    "query": "My order shows shipped but hasn't moved in days, what should I do?",
+    "ideal_answer": "If an order shows 'Shipped' for more than 3 business days within the same city without movement, the customer should contact support so a trace can be filed with the courier.",
+    "source": "customer_support_knowledge_base.md - Section 3.3"
+  },
+  {
+    "id": "g008",
+    "query": "What happens if the courier fails to deliver my package multiple times?",
+    "ideal_answer": "Couriers attempt delivery up to 3 times. If all three attempts fail, the order is returned to the TechNest warehouse and the customer is notified, after which they can request re-shipment for an additional fee or a refund minus the original shipping cost if it wasn't free.",
+    "source": "customer_support_knowledge_base.md - Section 3.4"
+  },
+  {
+    "id": "g009",
+    "query": "Does my new phone come with a warranty?",
+    "ideal_answer": "Yes, all new electronics sold by TechNest come with a 1-year manufacturer warranty against manufacturing defects, unless otherwise stated on the product page. This does not cover physical damage, unauthorized repairs, normal wear and tear, or software issues from unofficial firmware.",
+    "source": "customer_support_knowledge_base.md - Section 4.1"
+  },
+  {
+    "id": "g010",
+    "query": "What is TechNest Care and what does it cover?",
+    "ideal_answer": "TechNest Care is an extended warranty add-on for select high-value items like laptops and flagship smartphones. It extends coverage to 2 years total and additionally covers one incident of accidental damage, like a cracked screen or liquid spill, per year, for a service fee of PKR 2,000 to 5,000 depending on the device category.",
+    "source": "customer_support_knowledge_base.md - Section 4.2"
+  },
+  {
+    "id": "g011",
+    "query": "How do I make a warranty claim?",
+    "ideal_answer": "The customer contacts support with the order number and a description of the issue. Support may ask for troubleshooting steps first. If approved, the item is shipped to the nearest TechNest service center with shipping reimbursed. Diagnosis takes 3 to 7 business days, after which the item is repaired or replaced at no cost if it's a covered defect.",
+    "source": "customer_support_knowledge_base.md - Section 4.3"
+  },
+  {
+    "id": "g012",
+    "query": "Can I cancel my order after placing it?",
+    "ideal_answer": "Orders can be cancelled free of charge as long as the status is still 'Order Placed' or 'Processing.' Once the status changes to 'Packed' or later, it cannot be cancelled, and the customer must wait for delivery and then initiate a return instead.",
+    "source": "customer_support_knowledge_base.md - Section 5.1"
+  },
+  {
+    "id": "g013",
+    "query": "Can I change my delivery address after ordering?",
+    "ideal_answer": "The delivery address can be changed only while the order is in 'Order Placed' or 'Processing' status, and only after identity verification. Once an order is 'Shipped,' the address cannot be changed, and the customer may refuse delivery and place a new order instead.",
+    "source": "customer_support_knowledge_base.md - Section 5.2"
+  },
+  {
+    "id": "g014",
+    "query": "What does the order status 'Out for Delivery' mean?",
+    "ideal_answer": "'Out for Delivery' means the package is with the local delivery rider for same-day delivery.",
+    "source": "customer_support_knowledge_base.md - Section 5.3"
+  },
+  {
+    "id": "g015",
+    "query": "Is cash on delivery available for large orders?",
+    "ideal_answer": "Cash on Delivery is available for orders under PKR 100,000. COD orders above PKR 50,000 require a 20% advance payment via card or bank transfer to confirm the order, refundable if the order is cancelled before shipping.",
+    "source": "customer_support_knowledge_base.md - Section 6"
+  },
+  {
+    "id": "g016",
+    "query": "My phone battery is draining really fast, what should I do?",
+    "ideal_answer": "Battery drain is usually caused by background apps or an outdated OS. Support first asks the customer to check battery usage stats in Settings and update to the latest software version before escalating to a warranty claim.",
+    "source": "customer_support_knowledge_base.md - Section 7.1"
+  },
+  {
+    "id": "g017",
+    "query": "My laptop keyboard stopped working, is that covered?",
+    "ideal_answer": "Hardware issues like the keyboard, trackpad, display, or battery that arise within the warranty period are covered under the standard warranty policy.",
+    "source": "customer_support_knowledge_base.md - Section 7.2"
+  },
+  {
+    "id": "g018",
+    "query": "My smart plug won't connect to WiFi, what could be wrong?",
+    "ideal_answer": "Smart home devices only connect over 2.4GHz Wi-Fi; 5GHz-only networks are the most common cause of failed setup. If the device still fails to connect after following the in-app setup guide, support will walk the customer through a factory reset before considering a defect claim.",
+    "source": "customer_support_knowledge_base.md - Section 7.3"
+  },
+  {
+    "id": "g019",
+    "query": "When should the AI assistant transfer me to a human agent?",
+    "ideal_answer": "The assistant should escalate to a human agent if the customer explicitly asks for one, for payment disputes or fraud/security concerns, for legal complaints, when the issue doesn't match any documented policy, or when a refund or address change falls outside the documented policy windows.",
+    "source": "customer_support_knowledge_base.md - Section 8"
+  },
+  {
+    "id": "g020",
+    "query": "Can I return a product just because I changed my mind?",
+    "ideal_answer": "Yes, within the 7-day return window, as long as it's unused and in original packaging. This is treated as a standard change-of-mind return, and the customer covers the return shipping cost.",
+    "source": "customer_support_knowledge_base.md - Section 9 FAQ"
+  }
+]

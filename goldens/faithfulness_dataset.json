@@ -1,0 +1,152 @@
+[
+  {
+    "id": "f001",
+    "query": "What items are not eligible for return?",
+    "ideal_context": [
+      "The following categories are not eligible for return or refund except in cases of manufacturing defect: Earphones, earbuds, and other items that come into direct contact with the ear or skin, once the seal is broken. Gift cards and store credit vouchers. Software licenses and digital downloads. Items marked \"Clearance\" or \"Final Sale\" at the time of purchase. Custom or made-to-order configurations (e.g., laptops with custom RAM/SSD upgrades)."
+    ],
+    "source_sections": [
+      "2.2"
+    ]
+  },
+  {
+    "id": "f002",
+    "query": "When do partial refunds apply and how much is deducted?",
+    "ideal_context": [
+      "Partial refunds (a percentage of the item price, with the remainder withheld as a restocking or damage fee) apply when: The item is missing original accessories or packaging (10-20% deduction). The item shows minor cosmetic wear inconsistent with \"unused\" condition (up to 30% deduction). The return is initiated after the 7-day window but within 14 days, at TechNest's discretion (store credit only, no cash refund)."
+    ],
+    "source_sections": [
+      "2.4"
+    ]
+  },
+  {
+    "id": "f003",
+    "query": "What are the steps in the refund process after I request a return?",
+    "ideal_context": [
+      "Customer initiates a return request through the \"My Orders\" page or by contacting support with the order number. Support verifies eligibility (within the 7-day window, item condition, category). If eligible, a return shipping label is issued at no cost if the return is due to a TechNest error (wrong item shipped, defective unit, damaged in transit). If the return is due to a change of mind, the customer bears the return shipping cost. Once the returned item is received and inspected at the fulfillment center (typically 2-4 business days), the refund is processed to the original payment method."
+    ],
+    "source_sections": [
+      "2.3"
+    ]
+  },
+  {
+    "id": "f004",
+    "query": "How much does international shipping cost and is it refundable?",
+    "ideal_context": [
+      "International shipping charges are calculated at checkout based on weight and destination and are non-refundable once the order has shipped, even if the order is later cancelled or returned."
+    ],
+    "source_sections": [
+      "3.2"
+    ]
+  },
+  {
+    "id": "f005",
+    "query": "What are all the order status stages a package goes through?",
+    "ideal_context": [
+      "Order Placed: Payment confirmed, order queued for processing. Processing: Warehouse is picking and packing the item(s). Packed: Item is boxed and awaiting courier pickup. Shipped: Courier has collected the package. Out for Delivery: Package is with the local delivery rider for same-day delivery. Delivered: Package has been handed to the customer or an authorized recipient. Cancelled: Order was cancelled before shipping. Returned: Item was sent back to TechNest after delivery."
+    ],
+    "source_sections": [
+      "5.3"
+    ]
+  },
+  {
+    "id": "f006",
+    "query": "What is not covered under the standard 1-year warranty?",
+    "ideal_context": [
+      "All new electronics sold by TechNest come with a 1-year manufacturer warranty against manufacturing defects, unless otherwise stated on the product page. This covers hardware failures that occur under normal use. It does not cover: Physical damage (drops, cracked screens, liquid damage). Damage from unauthorized repairs or third-party modifications. Normal wear and tear (battery degradation after 12+ months is considered normal wear). Software issues caused by unofficial firmware or rooting/jailbreaking."
+    ],
+    "source_sections": [
+      "4.1"
+    ]
+  },
+  {
+    "id": "f007",
+    "query": "What is the process for making a warranty claim?",
+    "ideal_context": [
+      "Customer contacts support with the order number and a description of the issue. Support may ask for troubleshooting steps to rule out software issues before approving a hardware claim. If approved, the customer ships the item to the nearest TechNest service center (shipping cost reimbursed if the claim is approved). Diagnosis takes 3-7 business days. If confirmed as a covered defect, the item is repaired or replaced (TechNest's discretion) at no cost. If the issue is found to be outside warranty coverage (e.g., physical damage), the customer is notified with a repair quote before any chargeable work is done."
+    ],
+    "source_sections": [
+      "4.3"
+    ]
+  },
+  {
+    "id": "f008",
+    "query": "What payment methods does TechNest accept?",
+    "ideal_context": [
+      "TechNest accepts the following payment methods: Cash on Delivery (COD) - available for orders under PKR 100,000. Debit/credit cards (Visa, Mastercard) via a secure payment gateway. Bank transfer (direct transfer with order confirmation upon proof of payment). TechNest Wallet (store credit balance, top-up available, non-withdrawable but usable on any purchase). EasyPaisa and JazzCash mobile wallets."
+    ],
+    "source_sections": [
+      "6"
+    ]
+  },
+  {
+    "id": "f009",
+    "query": "Why does my phone charging issue not qualify for warranty?",
+    "ideal_context": [
+      "Phone won't charge: Support asks the customer to try a different cable and charger first, since cable failure is the most common cause and is not covered under warranty unless the cable itself was defective out of the box."
+    ],
+    "source_sections": [
+      "7.1"
+    ]
+  },
+  {
+    "id": "f010",
+    "query": "What operating system support does TechNest provide for laptops?",
+    "ideal_context": [
+      "Laptops purchased through TechNest come pre-installed with the operating system selected at checkout (Windows 11 Home/Pro or no OS for Linux users). TechNest does not provide support for third-party software installed after delivery. Hardware issues (keyboard, trackpad, display, battery) that arise within the warranty period are covered under section 4 above."
+    ],
+    "source_sections": [
+      "7.2"
+    ]
+  },
+  {
+    "id": "f011",
+    "query": "In which cases should the assistant hand off to a human agent instead of answering?",
+    "ideal_context": [
+      "The AI assistant should escalate to a human support agent, rather than attempt to resolve the issue itself, in the following cases: The customer explicitly asks to speak to a human agent. The request involves changing payment details, disputing a charge, or a fraud/security concern. The request involves a legal complaint or threat of legal action. The customer's issue does not match any documented policy or troubleshooting step above, and inventing an answer would risk giving incorrect information. The customer is requesting a refund or address change outside the documented policy windows, which requires manual approval."
+    ],
+    "source_sections": [
+      "8"
+    ]
+  },
+  {
+    "id": "f012",
+    "query": "Does TechNest Care cover a cracked screen from a drop?",
+    "ideal_context": [
+      "Q: Does TechNest Care cover a cracked screen from a drop? A: Yes, but only if the customer purchased the TechNest Care extended warranty add-on at checkout, and only once per year, subject to the service fee outlined in section 4.2."
+    ],
+    "source_sections": [
+      "9"
+    ]
+  },
+  {
+    "id": "f013",
+    "query": "How does TechNest handle a failed delivery attempt?",
+    "ideal_context": [
+      "Couriers attempt delivery up to 3 times. If all three attempts fail (customer unavailable, incorrect address, refused delivery), the order is returned to the TechNest warehouse and the customer is notified. The customer can then request re-shipment (additional shipping fee applies) or a refund (minus original shipping cost, if shipping was not free)."
+    ],
+    "source_sections": [
+      "3.4"
+    ]
+  },
+  {
+    "id": "f014",
+    "query": "How do I set up a TechNest smart home device and what network does it need?",
+    "ideal_context": [
+      "Smart plugs, cameras, and speakers sold by TechNest require the TechNest Home app (available on iOS and Android) for setup. Devices connect over 2.4GHz Wi-Fi only; 5GHz-only networks are not supported and are the most common cause of failed setup. If a device fails to connect after following the in-app setup guide, support will walk the customer through a factory reset before considering a defect claim."
+    ],
+    "source_sections": [
+      "7.3"
+    ]
+  },
+  {
+    "id": "f015",
+    "query": "Why does my order still say 'Order Placed' even though I already paid by bank transfer?",
+    "ideal_context": [
+      "Q: I paid via bank transfer but my order still shows \"Order Placed.\" Why? A: Bank transfer orders move to \"Processing\" only after TechNest confirms receipt of payment, which can take up to 1 business day. If it has been longer, the customer should contact support with proof of payment."
+    ],
+    "source_sections": [
+      "9"
+    ]
+  }
+]
