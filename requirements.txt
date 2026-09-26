@@ -8,3 +8,5 @@ langchain_huggingface
 langchain_openai
 qdrant_client
 pyPDF
+langchain-openrouter
+langgraph-checkpoint-postgres

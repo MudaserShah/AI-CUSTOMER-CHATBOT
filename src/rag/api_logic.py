@@ -6,15 +6,15 @@ import os
 import re
 from pathlib import Path
 from typing import List
-
+from dotenv import load_dotenv
 from fastapi import Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
-from langchain_openai import ChatOpenAI
+from langchain_openrouter import ChatOpenRouter
 from qdrant_client import QdrantClient
 
-from rag.config import settings
-from rag.file_loaders import is_supported
-from rag.schemas import (
+from src.rag.config import settings
+from src.rag.file_loaders import is_supported
+from src.rag.schemas import (
     DeleteResponse,
     DocumentInfo,
     DocumentListResponse,
@@ -24,7 +24,7 @@ from rag.schemas import (
     QueryResponse,
     UploadFilesResponse,
 )
-from rag.rag_service import (
+from src.rag.rag_service import (
     compute_doc_id,
     delete_document,
     index_document,
@@ -32,7 +32,7 @@ from rag.rag_service import (
     query_stream,
     query_with_citations,
 )
-
+load_dotenv()
 logger = logging.getLogger(__name__)
 
 
@@ -47,7 +47,7 @@ def get_embeddings_dep():
     return app_state["embeddings"]
 
 
-def get_llm() -> ChatOpenAI:
+def get_llm() -> ChatOpenRouter:
     return app_state["llm"]
 
 
@@ -162,7 +162,7 @@ def query(
     request       : QueryRequest,
     qdrant_client : QdrantClient = Depends(get_qdrant_client),
     embeddings                   = Depends(get_embeddings_dep),
-    llm           : ChatOpenAI   = Depends(get_llm),
+    llm           : ChatOpenRouter   = Depends(get_llm),
 ) -> QueryResponse:
     """Ask a question — returns answer + citations with doc_id for file viewer."""
     try:
@@ -228,7 +228,7 @@ async def query_stream_endpoint(
     request       : QueryRequest,
     qdrant_client : QdrantClient = Depends(get_qdrant_client),
     embeddings                   = Depends(get_embeddings_dep),
-    llm           : ChatOpenAI   = Depends(get_llm),
+    llm           : ChatOpenRouter   = Depends(get_llm),
 ):
     """
     Streaming query endpoint — returns SSE events so the UI can show

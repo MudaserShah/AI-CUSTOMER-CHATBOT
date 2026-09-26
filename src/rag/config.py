@@ -7,17 +7,21 @@ ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 
 class Settings(BaseSettings):
 
-    openai_api_key: str
-    llm_model: str = "gpt-4o-mini"
+    # openai_api_key: str
+    # llm_model: str = "gpt-4o-mini"
 
-    embedding_provider:str = "openai"
+    # embedding_provider:str = "openai"
+    openrouter_api_key: str
+    llm_model: str = "openrouter/free"
+
+    embedding_provider: str = "huggingface"
 
     qdrant_url: str
     qdrant_api_key:str
     qdrant_collection: str = "customer_knowledge"
 
     #files storage
-    uploads_dir: str= "uploads_tmp"
+    # uploads_dir: str= "uploads_tmp"
     uploads_dir: str= "uploads"
     markdown_dir: str= "markdown_files"
     max_upload_size_mb: int = 50

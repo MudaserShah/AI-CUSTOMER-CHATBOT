@@ -3,7 +3,7 @@ from typing import Annotated, List
 from fastapi import APIRouter, File, UploadFile
 from fastapi.responses import Response, StreamingResponse
 
-from rag.api_logic import (
+from src.rag.api_logic import (
     get_documents,
     get_file_markdown,
     get_original_file,
@@ -14,7 +14,7 @@ from rag.api_logic import (
     upload_documents,
 )
 
-from rag.schemas import (
+from src.rag.schemas import (
     DeleteResponse,
     DocumentListResponse,
     FileContentResponse,

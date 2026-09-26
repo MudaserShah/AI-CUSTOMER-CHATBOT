@@ -6,13 +6,16 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from langchain_openai import ChatOpenAI
+# from langchain_openai import ChatOpenAI
+from langchain_openrouter import ChatOpenRouter
 from qdrant_client import QdrantClient
 
-from rag.api_logic import app_state
-from rag.config import settings
-from rag.rag_service import get_embedding_provider
-from rag.routes import router
+from src.rag.api_logic import app_state
+from src.rag.config import settings
+from src.rag.rag_service import get_embedding_provider
+from src.rag.routes import router
+from src.routes.refund_routes import router as refund_router
+from src.routes.chat_routes import router as chat_router
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s pip install --upgrade pip| %(message)s")
 logger = logging.getLogger(__name__)
@@ -30,8 +33,14 @@ async def lifespan(app: FastAPI):
     logger.info("Connecting to Qdrant...")
     app_state["qdrant_client"] = QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key, timeout=300)
 
-    logger.info("Connecting to OpenAI LLM...")
-    app_state["llm"] = ChatOpenAI(model=settings.llm_model, temperature=0, api_key=settings.openai_api_key)
+    # logger.info("Connecting to OpenAI LLM...")
+    # app_state["llm"] = ChatOpenAI(model=settings.llm_model, temperature=0, api_key=settings.openai_api_key)
+    
+    logger.info("Connecting to OpenRouter LLM...")
+    app_state["llm"] = ChatOpenRouter(
+    model="openrouter/free",
+    temperature=0,
+    )
 
     logger.info("Document Butler ready.")
     yield
@@ -49,6 +58,14 @@ app = FastAPI(
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 app.include_router(router)
+app.include_router(refund_router)
+app.include_router(chat_router)
 
 if __name__ == "__main__":
     import uvicorn
+    uvicorn.run(
+        "src.main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+    )

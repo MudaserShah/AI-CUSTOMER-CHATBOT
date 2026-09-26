@@ -12,8 +12,9 @@ from typing import AsyncGenerator, List
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-# from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_openrouter import ChatOpenRouter
+# from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -25,10 +26,10 @@ from qdrant_client.models import (
     PointStruct,
     VectorParams,
 )
-from rag.file_loaders import load_file
-from rag.markdown_generator import generate_markdown, smart_chunk
-from rag.schemas import Citation
-from rag.config import Settings
+from src.rag.file_loaders import load_file
+from src.rag.markdown_generator import generate_markdown, smart_chunk
+from src.rag.schemas import Citation
+from src.rag.config import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -42,29 +43,38 @@ def compute_doc_id(file_name: str) -> str:
 
 
 def get_embedding_provider(provider: str):
-    """
-    Return the configured embedding model.
+    # """
+    # Return the configured embedding model.
 
-    OpenAI:
-        text-embedding-3-small → 1536 dimensions
+    # OpenAI:
+    #     text-embedding-3-small → 1536 dimensions
 
-    HuggingFace:
-        all-MiniLM-L6-v2 → 384 dimension
-    """
-    settings = Settings()
-    api_key = getattr(settings, "OPENAI_API_KEY", None) or getattr(settings, "openai_api_key", None)
-    if provider == "openai":
-        return OpenAIEmbeddings(
-            model="text-embedding-3-small"
-        )
-    return OpenAIEmbeddings(
-                model="text-embedding-3-small",
-                openai_api_key=api_key,
-            )
+    # HuggingFace:
+    #     all-MiniLM-L6-v2 → 384 dimension
+    # """
+    # settings = Settings()
+    # api_key = getattr(settings, "OPENAI_API_KEY", None) or getattr(settings, "openai_api_key", None)
+    # if provider == "openai":
+    #     return OpenAIEmbeddings(
+    #         model="text-embedding-3-small"
+    #     )
+    # return OpenAIEmbeddings(
+    #             model="text-embedding-3-small",
+    #             openai_api_key=api_key,
+    #         )
     
-    # return HuggingFaceEmbeddings(
-    #     model_name="all-MiniLM-L6-v2"
-    # )
+    """
+        Return the configured embedding model.
+    """
+
+    if provider == "huggingface":
+        return HuggingFaceEmbeddings(
+            model_name="sentence-transformers/all-MiniLM-L6-v2"
+        )
+
+    raise ValueError(
+        f"Unsupported embedding provider: {provider}"
+    )
 
 def collection_exists(
         client: QdrantClient,
@@ -469,7 +479,7 @@ def retrieve_with_citations(
 def generate_from_context(
     question: str,
     context: str,
-    llm: ChatOpenAI,
+    llm: ChatOpenRouter,
 ) -> str:
     """
     GENERATION-ONLY half of the pipeline.
@@ -535,7 +545,7 @@ def query_with_citations(
     top_k: int,
     client: QdrantClient,
     embeddings,
-    llm: ChatOpenAI,
+    llm: ChatOpenRouter,
     collection_name: str,
 ) -> dict:
     """
@@ -575,7 +585,7 @@ async def query_stream(
     top_k: int,
     client: QdrantClient,
     embeddings,
-    llm: ChatOpenAI,
+    llm: ChatOpenRouter,
     collection_name: str,
 ) -> AsyncGenerator[str, None]:
     """
