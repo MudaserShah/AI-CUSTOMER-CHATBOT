@@ -1,20 +1,24 @@
-import os
 import psycopg
-from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 import uuid
 
-load_dotenv()
-
-POSTGRES_URI = os.getenv("POSTGRES_URI", "postgresql://ai_chatbot:Shahg@401@localhost:5432/ai_customer_chatbot")
+from src.database.db_utils import handle_db_errors
+from src.database.pool import get_pool
 
 class OrderRepository:
 
-    def __init__(self, connection_uri=POSTGRES_URI):
-        self.database_url = connection_uri
+    def __init__(self, connection_uri: Optional[str] = None):
+        self._override_uri = connection_uri
 
+    def _get_connection(self):
+        if self._override_uri:
+            return psycopg.connect(self._override_uri)
+        return get_pool().connection()
+
+    @handle_db_errors
     def get_order(self, order_id, customer_id):
-        with psycopg.connect(self.database_url) as conn:
+        with self._get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -50,13 +54,14 @@ class OrderRepository:
                 "delivery_address": row[7],
                 }
 
+    @handle_db_errors
     def update_delivery_address(
     self,
     order_id: str,
     customer_id: str,
     new_address: str,
 ):
-        with psycopg.connect(self.database_url) as conn:
+        with self._get_connection() as conn:
             with conn.cursor() as cur:
 
                 cur.execute(
@@ -88,8 +93,9 @@ class OrderRepository:
                 "delivery_address": row[2],
             }
         
+    @handle_db_errors
     def get_refund_eligibility(self, order_id, customer_id):
-        with psycopg.connect(self.database_url) as conn:
+        with self._get_connection() as conn:
             with conn.cursor() as cur:
 
                 cur.execute(

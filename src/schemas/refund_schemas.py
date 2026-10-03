@@ -3,10 +3,8 @@ from pydantic import BaseModel, Field
 
 class RefundRequest(BaseModel):
 
-    customer_id: str = Field(
-        ...,
-        description="Unique customer identifier",
-    )
+    # customer_id intentionally removed — derived from the authenticated
+    # JWT, never from client input. See src/auth/dependencies.py.
 
     order_id: str = Field(
     ...,
@@ -37,10 +35,8 @@ class RefundResponse(BaseModel):
 
 class RefundStatusRequest(BaseModel):
 
-    customer_id: str = Field(
-        ...,
-        description="Unique customer identifier",
-    )
+    # customer_id intentionally removed — derived from the authenticated
+    # JWT, never from client input. See src/auth/dependencies.py.
 
     order_id: str = Field(
         ...,

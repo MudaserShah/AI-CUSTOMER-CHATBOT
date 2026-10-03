@@ -1,5 +1,10 @@
-from fastapi import APIRouter
+import logging
 
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+
+from src.auth.dependencies import get_current_customer_id
+from src.database.errors import DatabaseError
+from src.rate_limit import limiter
 from src.schemas.refund_schemas import (
     RefundRequest,
     RefundResponse,
@@ -7,6 +12,7 @@ from src.schemas.refund_schemas import (
 
 from src.services.refund_service import RefundService
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/refund",
@@ -21,27 +27,46 @@ refund_service = RefundService()
     "",
     response_model=RefundResponse,
 )
+@limiter.limit("10/minute")
 def create_refund(
-    request: RefundRequest,
+    request: Request,
+    body: RefundRequest,
+    customer_id: str = Depends(get_current_customer_id),
 ):
-    return refund_service.create_refund_request(
-        customer_id=request.customer_id,
-        order_id=request.order_id,
-        reason=request.reason,
-    )
+    try:
+        return refund_service.create_refund_request(
+            customer_id=customer_id,
+            order_id=body.order_id,
+            reason=body.reason,
+        )
+    except DatabaseError:
+        logger.exception("Database error while creating refund for customer_id=%s", customer_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="We're having trouble reaching our systems right now. Please try again shortly.",
+        )
 
 @router.get(
     "/{order_id}",
     response_model=RefundResponse,
 )
+@limiter.limit("30/minute")
 def get_refund_status(
+    request: Request,
     order_id: str,
-    customer_id: str,
+    customer_id: str = Depends(get_current_customer_id),
 ):
-    result = refund_service.get_refund_status(
-        customer_id=customer_id,
-        order_id=order_id,
-    )
+    try:
+        result = refund_service.get_refund_status(
+            customer_id=customer_id,
+            order_id=order_id,
+        )
+    except DatabaseError:
+        logger.exception("Database error while fetching refund status for customer_id=%s", customer_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="We're having trouble reaching our systems right now. Please try again shortly.",
+        )
 
     if result is None:
         return {

@@ -3,10 +3,10 @@ from pydantic import BaseModel, Field
 
 class ChatRequest(BaseModel):
 
-    customer_id: str = Field(
-        ...,
-        description="Unique customer identifier",
-    )
+    # customer_id intentionally removed — it is derived from the
+    # authenticated JWT (see src/auth/dependencies.py), never from
+    # client input. Trusting a client-supplied customer_id let any
+    # caller read or act as any other customer.
 
     thread_id: str = Field(
         ...,

@@ -1,6 +1,12 @@
 fastapi
 pydantic
+pydantic-settings
 python-dotenv
+psycopg[binary,pool]
+pyjwt
+slowapi
+tenacity
+alembic
 openai
 uvicorn
 langchain_community

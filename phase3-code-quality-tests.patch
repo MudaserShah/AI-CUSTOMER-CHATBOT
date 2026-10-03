@@ -1,0 +1,1006 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+new file mode 100644
+index 0000000..76d19ca
+--- /dev/null
++++ b/.github/workflows/ci.yml
+@@ -0,0 +1,66 @@
++name: CI
++
++on:
++  push:
++    branches: ["**"]
++  pull_request:
++    branches: ["**"]
++
++jobs:
++  lint-and-test:
++    runs-on: ubuntu-latest
++
++    services:
++      postgres:
++        image: postgres:16
++        env:
++          POSTGRES_USER: postgres
++          POSTGRES_PASSWORD: postgres
++          POSTGRES_DB: ai_customer_chatbot_ci
++        ports:
++          - 5432:5432
++        options: >-
++          --health-cmd pg_isready
++          --health-interval 10s
++          --health-timeout 5s
++          --health-retries 5
++
++    env:
++      POSTGRES_URI: postgresql://postgres:postgres@localhost:5432/ai_customer_chatbot_ci
++      JWT_SECRET: ci-test-secret-not-for-production
++      JWT_EXPIRY_MINUTES: "60"
++      CORS_ALLOWED_ORIGINS: ""
++      OPENROUTER_API_KEY: ci-placeholder
++      QDRANT_URL: http://localhost:6333
++      QDRANT_API_KEY: ci-placeholder
++
++    steps:
++      - uses: actions/checkout@v4
++
++      - uses: actions/setup-python@v5
++        with:
++          python-version: "3.13"
++
++      - name: Install dependencies
++        run: |
++          python -m pip install --upgrade pip
++          pip install -r requirements.txt
++          pip install black ruff pytest
++
++      # These two run but don't block the pipeline yet — this codebase
++      # has pre-existing lint/format debt (see pyproject.toml's [tool.ruff]
++      # comment). Remove `continue-on-error` once that debt is paid down,
++      # so lint failures actually block merges the way they should.
++      - name: Lint (ruff)
++        run: ruff check .
++        continue-on-error: true
++
++      - name: Format check (black)
++        run: black --check .
++        continue-on-error: true
++
++      - name: Apply database migrations
++        run: alembic upgrade head
++
++      - name: Run tests
++        run: pytest -v
+diff --git a/migrations/versions/a64e2b1f1cb3_baseline_schema_reconstructed_from_.py b/migrations/versions/a64e2b1f1cb3_baseline_schema_reconstructed_from_.py
+index 52de084..274c0fc 100644
+--- a/migrations/versions/a64e2b1f1cb3_baseline_schema_reconstructed_from_.py
++++ b/migrations/versions/a64e2b1f1cb3_baseline_schema_reconstructed_from_.py
+@@ -99,6 +99,25 @@ def upgrade() -> None:
+     op.create_index("ix_refund_requests_customer_id", "refund_requests", ["customer_id"])
+     op.create_index("ix_refund_requests_order_id", "refund_requests", ["order_id"])
+ 
++    # src/services/refund_service.py explicitly catches UniqueViolation
++    # as an expected race-condition outcome when two requests try to
++    # create a refund for the same order at once — that only works if
++    # the database actually enforces uniqueness. A plain UNIQUE
++    # constraint would block ever re-requesting a refund after it's
++    # rejected/completed, so this is a PARTIAL unique index: only one
++    # pending/approved refund request can exist per (customer, order)
++    # at a time, matching the check in create_refund_request().
++    # VERIFY this matches your real database — if your live DB has a
++    # different constraint (or none at all), the race-condition
++    # handling in refund_service.py silently does nothing.
++    op.create_index(
++        "uq_refund_requests_active_per_order",
++        "refund_requests",
++        ["customer_id", "order_id"],
++        unique=True,
++        postgresql_where=sa.text("status IN ('pending', 'approved')"),
++    )
++
+ 
+ def downgrade() -> None:
+     op.drop_table("refund_requests")
+diff --git a/pyproject.toml b/pyproject.toml
+index 79c723e..48e285f 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -15,3 +15,19 @@ ai-customer-chatbot = "ai_customer_chatbot:main"
+ [build-system]
+ requires = ["uv_build>=0.12.3,<0.13.0"]
+ build-backend = "uv_build"
++
++[tool.black]
++line-length = 100
++target-version = ["py313"]
++
++[tool.ruff]
++line-length = 100
++target-version = "py313"
++# Start with a small, high-signal rule set rather than everything ruff
++# offers: E/F catch real bugs (unused imports, undefined names, syntax
++# issues) and I keeps imports sorted. Running `ruff check .` today
++# still reports existing issues in this codebase — that's expected for
++# a first-time adoption; fix them incrementally rather than in one
++# large, hard-to-review commit. Expand this list (e.g. add "B" for
++# bugbear, "UP" for pyupgrade) once the codebase is clean under E/F/I.
++select = ["E", "F", "I"]
+diff --git a/src/database/base_repository.py b/src/database/base_repository.py
+new file mode 100644
+index 0000000..daadaaa
+--- /dev/null
++++ b/src/database/base_repository.py
+@@ -0,0 +1,32 @@
++"""
++Shared base class for repositories.
++
++Before this, CustomerRepository, OrderRepository, and RefundRepository
++each had their own identical copy of __init__ and _get_connection
++(connect_uri override + pool fallback). Three copies of the same logic
++means a future fix (e.g. adding connection timeout handling) has to be
++remembered and applied three times — this is the F9 DRY fix from the
++production-readiness report.
++
++Every repository should inherit from this and call super().__init__()
++if it overrides __init__.
++"""
++from typing import Optional
++
++import psycopg
++
++from src.database.pool import get_pool
++
++
++class BaseRepository:
++
++    def __init__(self, connection_uri: Optional[str] = None):
++        # connection_uri lets tests/scripts point at a different database
++        # by opening a direct connection instead of the shared pool.
++        # Normal app usage leaves this unset and uses the pool.
++        self._override_uri = connection_uri
++
++    def _get_connection(self):
++        if self._override_uri:
++            return psycopg.connect(self._override_uri)
++        return get_pool().connection()
+diff --git a/src/database/db_utils.py b/src/database/db_utils.py
+index 1321a80..9ff7d2b 100644
+--- a/src/database/db_utils.py
++++ b/src/database/db_utils.py
+@@ -19,6 +19,7 @@ import functools
+ import logging
+ 
+ import psycopg
++from psycopg.errors import UniqueViolation
+ 
+ from src.database.errors import DatabaseError
+ 
+@@ -30,6 +31,14 @@ def handle_db_errors(func):
+     def wrapper(*args, **kwargs):
+         try:
+             return func(*args, **kwargs)
++        except UniqueViolation:
++            # Not an infrastructure failure — this is expected, handled
++            # business logic (e.g. src/services/refund_service.py
++            # specifically catches UniqueViolation to treat a duplicate
++            # refund request as "already exists" instead of an error).
++            # Re-raise unchanged so that existing handling keeps working;
++            # only genuinely unexpected DB errors become DatabaseError.
++            raise
+         except psycopg.Error as exc:
+             logger.exception("Database error in %s", func.__qualname__)
+             raise DatabaseError(
+diff --git a/src/database/order_repository.py b/src/database/order_repository.py
+index 617d63b..b81934f 100644
+--- a/src/database/order_repository.py
++++ b/src/database/order_repository.py
+@@ -1,20 +1,9 @@
+-import psycopg
+ from datetime import datetime, timedelta, timezone
+-from typing import Optional
+-import uuid
+ 
++from src.database.base_repository import BaseRepository
+ from src.database.db_utils import handle_db_errors
+-from src.database.pool import get_pool
+ 
+-class OrderRepository:
+-
+-    def __init__(self, connection_uri: Optional[str] = None):
+-        self._override_uri = connection_uri
+-
+-    def _get_connection(self):
+-        if self._override_uri:
+-            return psycopg.connect(self._override_uri)
+-        return get_pool().connection()
++class OrderRepository(BaseRepository):
+ 
+     @handle_db_errors
+     def get_order(self, order_id, customer_id):
+diff --git a/src/database/refund_repository.py b/src/database/refund_repository.py
+index 807527b..1beaea3 100644
+--- a/src/database/refund_repository.py
++++ b/src/database/refund_repository.py
+@@ -1,20 +1,17 @@
+ import uuid
+-from typing import Optional
+-
+-import psycopg
+ 
++from src.database.base_repository import BaseRepository
+ from src.database.db_utils import handle_db_errors
+-from src.database.pool import get_pool
+ 
+ 
+-class RefundRepository:
++class RefundRepository(BaseRepository):
+ 
+     @handle_db_errors
+     def get_existing_refund(
+-    self,
+-    customer_id: str,
+-    order_id: str,
+-):
++        self,
++        customer_id: str,
++        order_id: str,
++    ):
+         with self._get_connection() as conn:
+             with conn.cursor() as cur:
+ 
+@@ -52,14 +49,6 @@ class RefundRepository:
+                 "created_at": row[5],
+             }
+ 
+-    def __init__(self, connection_uri: Optional[str] = None):
+-        self._override_uri = connection_uri
+-
+-    def _get_connection(self):
+-        if self._override_uri:
+-            return psycopg.connect(self._override_uri)
+-        return get_pool().connection()
+-
+     @handle_db_errors
+     def create_refund_request(
+         self,
+@@ -112,10 +101,10 @@ class RefundRepository:
+ 
+     @handle_db_errors
+     def get_refund_status(
+-    self,
+-    customer_id: str,
+-    order_id: str,
+-):
++        self,
++        customer_id: str,
++        order_id: str,
++    ):
+         with self._get_connection() as conn:
+             with conn.cursor() as cur:
+ 
+@@ -165,4 +154,4 @@ if __name__ == "__main__":
+         reason="Product is defective",
+     )
+ 
+-    print(result)
+\ No newline at end of file
++    print(result)
+diff --git a/src/database/repository.py b/src/database/repository.py
+index f4b6ed3..4760c64 100644
+--- a/src/database/repository.py
++++ b/src/database/repository.py
+@@ -1,22 +1,9 @@
+-import psycopg
+ import uuid
+-from typing import Optional
+ 
++from src.database.base_repository import BaseRepository
+ from src.database.db_utils import handle_db_errors
+-from src.database.pool import get_pool
+ 
+-class CustomerRepository:
+-
+-    def __init__(self, connection_uri: Optional[str] = None):
+-        # connection_uri lets tests/scripts point at a different database
+-        # by opening a direct connection instead of the shared pool.
+-        # Normal app usage leaves this unset and uses the pool.
+-        self._override_uri = connection_uri
+-
+-    def _get_connection(self):
+-        if self._override_uri:
+-            return psycopg.connect(self._override_uri)
+-        return get_pool().connection()
++class CustomerRepository(BaseRepository):
+ 
+     @handle_db_errors
+     def create_customer(self, customer_id, name, email):
+diff --git a/src/tools/refund_status_tool.py b/src/tools/refund_status_tool.py
+index f7d82b3..8d7dedc 100644
+--- a/src/tools/refund_status_tool.py
++++ b/src/tools/refund_status_tool.py
+@@ -1,42 +1,6 @@
+ from langchain_core.tools import tool
+ from pydantic import BaseModel, Field
+ 
+-# from src.database.refund_repository import RefundRepository
+-
+-
+-class RefundStatusInput(BaseModel):
+-
+-    order_id: str = Field(
+-        ...,
+-        pattern=r"^[0-9]{5}$",
+-        description="The 5-digit order ID"
+-    )
+-
+-
+-# refund_repository = RefundRepository()
+-
+-
+-@tool(args_schema=RefundStatusInput)
+-def get_refund_status(order_id: str):
+-    """
+-    Get the current refund request status for an order.
+-
+-    Customer identity is handled by the agent layer.
+-    """
+-
+-    return {
+-        "order_id": order_id,
+-        "status": "requires_customer_context"
+-    }
+-
+-
+-if __name__ == "__main__":
+-
+-    from langchain_core.tools import tool
+-from pydantic import BaseModel, Field
+-
+-# from src.database.refund_repository import RefundRepository
+-
+ 
+ class RefundStatusInput(BaseModel):
+ 
+@@ -47,9 +11,6 @@ class RefundStatusInput(BaseModel):
+     )
+ 
+ 
+-# refund_repository = RefundRepository()
+-
+-
+ @tool(args_schema=RefundStatusInput)
+ def get_refund_status(order_id: str):
+     """
+@@ -67,4 +28,4 @@ def get_refund_status(order_id: str):
+ if __name__ == "__main__":
+ 
+     result = get_refund_status.invoke({"order_id": "12345"})
+-    print(result)
+\ No newline at end of file
++    print(result)
+diff --git a/temporaru.py b/temporaru.py
+deleted file mode 100644
+index 6c9fa7d..0000000
+--- a/temporaru.py
++++ /dev/null
+@@ -1,376 +0,0 @@
+-import json
+-from pathlib import Path
+-from langchain_core.tools import tool
+-from pydantic import BaseModel, Field
+-from src.database.order_repository import OrderRepository
+-
+-# def load_order_data(json_file_name):
+-    
+-#     current_dir = Path(__file__).parent.resolve()
+-#     file_path= current_dir / json_file_name
+-#     with open(file_path, 'r') as file:
+-#         return json.load(file)
+-
+-# all_orders = load_order_data("orders.json")
+-class OrderInput(BaseModel):
+-    order_id: str =Field(..., pattern=r"^[0-9]{5}$", description="The 5-digit unique order identifier")
+-
+-# class OrderRepository:
+-#     def __init__(self, file_name: str = "orders.json"):
+-#         self.file_path = Path(__file__).parent.resolve() / file_name
+-#         self.orders = self._load_orders()
+-
+-#     def _load_orders(self):
+-#         with open(self.file_path, "r") as file:
+-#             orders_list = json.load(file)
+-#             return {
+-#                 order["order_id"]: order
+-#                 for order in orders_list
+-#             }
+-
+-#     def get_order(self, order_id: str):
+-#         return self.orders.get(order_id, None)
+-
+-
+-order_repository = OrderRepository()
+-
+-
+-
+-@tool(args_schema=OrderInput)
+-def get_order(order_id: str):
+-    """This tool retrieves the current status and delivery-related information of a specific order using its order ID."""
+-    
+-    # for order in all_orders:
+-    #     if order["order_id"] == order_id:
+-    #         return order
+-    
+-    order = order_repository.get_order(order_id)
+-    if order is None:
+-        return {
+-    "order_id": order_id,
+-    "status": "not_found",
+-    "message": "Invalid order ID"
+-}
+-    return order
+-
+-if __name__ == "__main__":
+-     
+-
+-    search_id = "12345"
+-        # status = get_order(search_id, all_orders)
+-    result = get_order.invoke({
+-           "order_id": search_id
+-        })
+-    
+-        
+-    print(f"Order ID {search_id} ka status hai :")
+-    print(result)
+-    print("Tool Name:", get_order.name)
+-    print("Tool Description:", get_order.description)
+-    print("Tool Args:", get_order.args_schema.model_json_schema())
+-order_tool.py
+-    ---------------------------------------------------------------------------------------------------------------------------
+-
+-
+-import json
+-from langchain_openrouter import ChatOpenRouter
+-from langgraph.graph import StateGraph, START, END
+-# from langgraph.prebuilt import ToolNode
+-from typing import Optional
+-# from langgraph.checkpoint.memory import InMemorySaver
+-from langchain_core.messages import HumanMessage, ToolMessage
+-from langgraph.checkpoint.postgres import PostgresSaver
+-# from src.database.repository import CustomerRepository
+-from src.services.customer_service import CustomerService
+-from src.database.order_repository import OrderRepository
+-from dotenv import load_dotenv
+-import os
+-load_dotenv()
+-postgres_uri = os.getenv("POSTGRES_URI")
+-# checkpointer = InMemorySaver()
+-from src.tools.order_tool import get_order
+-from langgraph.graph import MessagesState
+-
+-
+-class CustomerState(MessagesState):
+-    customer_id: str
+-
+-
+-# repo = CustomerRepository()
+-model = ChatOpenRouter(
+-    model="openrouter/free",
+-    temperature=0
+-)
+-tools = [get_order]
+-# tools_by_name = {
+-#     tool.name: tool
+-#     for tool in tools
+-# }
+-model_with_tools = model.bind_tools(tools)
+-# tool_node = ToolNode(tools)
+-
+-
+-# messages = [
+-#     HumanMessage(content="What is the status of order 12345?")
+-# ]
+-# response = model_with_tools.invoke(messages)
+-# messages.append(response)
+-# # print(response.tool_calls)
+-# tool_call = response.tool_calls[0]
+-# tool = tools_by_name[tool_call["name"]]
+-
+-# tool_result = tool.invoke(tool_call["args"])
+-# messages.append(
+-#     ToolMessage(
+-#         content=str(tool_result),
+-#         tool_call_id=tool_call["id"]
+-#     )
+-# )
+-# final_response = model_with_tools.invoke(messages)
+-
+-# print(final_response.content)
+-# def create_app():
+-#     checkpointer = InMemorySaver()
+-#     return graph.compile(checkpointer=checkpointer)
+-
+-def call_model(state: CustomerState):
+-    response = model_with_tools.invoke(state["messages"])
+-    return {"messages": [response]}
+-
+-def call_tools(state: CustomerState):
+-    last_message = state["messages"][-1]
+-
+-    customer_id = state["customer_id"]
+-
+-    # print("Customer ID from state:", customer_id)
+-
+-    tool_call = last_message.tool_calls[0]
+-
+-    tool_name = tool_call["name"]
+-    tool_args = tool_call["args"]
+-
+-    order_id = str(tool_args["order_id"])
+-
+-    order = order_repository.get_order(
+-    order_id,
+-    customer_id
+-    )
+-
+-    # if order is None:
+-    #     result = {
+-    #         "order_id": order_id,
+-    #         "status": "not_found",
+-    #         "message": "Order not found for this customer"
+-    #     }
+-    # else:
+-    #     result = order
+-
+-    # tool_message = ToolMessage(
+-    #     content=str(result),
+-    #     tool_call_id=tool_call["id"]
+-    # )
+-
+-    # return {
+-    #     "messages": [tool_message]
+-    # }
+-    if order is None:
+-        result = {
+-        "order_id": order_id,
+-        "status": "not_found",
+-        "message": "Order not found for this customer"
+-    }
+-    else:
+-        result = {
+-        "order_id": order["order_id"],
+-        "status": order["status"],
+-        "dispatch_date": str(order["dispatch_date"]),
+-        "shipping_date": str(order["shipping_date"]),
+-        "receiving_date": str(order["receiving_date"])
+-    }
+-
+-    tool_message = ToolMessage(
+-    content=json.dumps(result),
+-    tool_call_id=tool_call["id"]
+-)
+-
+-    return {
+-    "messages": [tool_message]
+-}
+-
+-
+-def should_continue(state: MessagesState):
+-    last_message = state["messages"][-1]
+-
+-    if last_message.tool_calls:
+-        return "tools"
+-
+-    return "end"
+-
+-# graph = StateGraph(MessagesState)
+-order_repository = OrderRepository()
+-graph = StateGraph(CustomerState)
+-graph.add_node("agent", call_model)
+-# graph.add_node("tools", tool_node)
+-graph.add_node("tools", call_tools)
+-graph.add_edge(START, "agent")
+-# graph.add_edge("agent", END)
+-graph.add_conditional_edges(
+-    "agent",
+-    should_continue,
+-    {
+-        "tools": "tools",
+-        "end": END
+-    }
+-)
+-graph.add_edge("tools", "agent")
+-with PostgresSaver.from_conn_string(postgres_uri) as checkpointer:
+-
+-    checkpointer.setup()
+-
+-    app = graph.compile(
+-        checkpointer=checkpointer
+-    )
+-
+-    # customer_id = input("Customer ID: ")
+-    # # thread_id = input("Thread ID: ")
+-    # # customer = repo.get_or_create_customer(customer_id)
+-    # # conversation = repo.get_or_create_conversation(customer_id)
+-    # customer = service.get_or_create_customer(customer_id)
+-    # conversation = service.get_or_create_conversation(customer_id)
+-
+-    # thread_id = conversation[2]
+-
+-    # print(f"Conversation started for {thread_id}")
+-    customer_id = input("Customer ID: ")
+-
+-    service = CustomerService()
+-
+-    customer = service.get_or_create_customer(
+-    customer_id
+-)
+-
+-    conversations = service.get_conversations(
+-    customer_id
+-)
+-
+-    if conversations:
+-        print("\nYour conversations:")
+-
+-        for i, conversation in enumerate(conversations, start=1):
+-            print(f"{i}. {conversation[2]}")
+-
+-        print("0. Start a new conversation")
+-
+-        choice = int(input("\nSelect conversation: "))
+-
+-        if choice == 0:
+-            conversation = service.start_conversation(
+-               customer_id
+-        )
+-        else:
+-            conversation = service.select_conversation(
+-            customer_id,
+-            choice
+-        )
+-
+-            if conversation is None:
+-                print("Invalid conversation selection.")
+-                exit()
+-
+-    else:
+-        conversation = service.start_conversation(
+-        customer_id
+-    )
+-
+-    thread_id = conversation[2]
+-
+-    print(f"\nConversation started for {thread_id}")
+-
+-    while True:
+-        user_input = input("You: ")
+-
+-        if user_input.lower() in ["exit", "quit"]:
+-            print("Goodbye!")
+-            break
+-
+-        result = app.invoke(
+-            {
+-                "customer_id": customer_id,
+-                "messages": [
+-                    {
+-                        "role": "user",
+-                        "content": user_input
+-                    }
+-                ]
+-            },
+-            config={
+-                "configurable": {
+-                    "thread_id": thread_id
+-                }
+-            }
+-        )
+-
+-        print("Assistant:", result["messages"][-1].content)
+-# app = create_app()
+-# app = graph.compile(checkpointer=checkpointer)
+-# result = app.invoke({
+-#     "messages": [
+-#         {
+-#             "role": "user",
+-#             "content": "What is the status of order 99999?"
+-#         }
+-#     ]
+-# })
+-
+-# print(result["messages"][-1].content)
+-# user_input = input("You: ")
+-
+-# result = app.invoke(
+-#     {
+-#         "messages": [
+-#             {
+-#                 "role": "user",
+-#                 "content": user_input
+-#             }
+-#         ]
+-#     },
+-#     config={
+-#         "configurable": {
+-#             "thread_id": "customer-001"
+-#         }
+-#     }
+-# )
+-
+-# print("Assistant:", result["messages"][-1].content)
+-# thread_id = "customer-001"
+-# customer_id = input("Customer ID: ")
+-# thread_id = input("Thread ID: ")
+-# print(f"Conversation started for {thread_id}")
+-
+-# while True:
+-#     user_input = input("You: ")
+-
+-#     if user_input.lower() in ["exit", "quit"]:
+-#         print("Goodbye!")
+-#         break
+-
+-#     result = app.invoke(
+-#         {
+-#             "messages": [
+-#                 {
+-#                     "role": "user",
+-#                     "content": user_input
+-#                 }
+-#             ]
+-#         },
+-#         config={
+-#             "configurable": {
+-#                 "thread_id": thread_id
+-#             }
+-#         }
+-#     )
+-
+-#     print("Assistant:", result["messages"][-1].content) agent.py
+-------------------------------------------------------------------
+-------------------------
+-
+diff --git a/tests/test_chat_routes.py b/tests/test_chat_routes.py
+index 3f30b9e..af9c8de 100644
+--- a/tests/test_chat_routes.py
++++ b/tests/test_chat_routes.py
+@@ -1,19 +1,33 @@
+ from fastapi import FastAPI
+ from fastapi.testclient import TestClient
+ from langchain_core.messages import AIMessage
++from slowapi import _rate_limit_exceeded_handler
++from slowapi.errors import RateLimitExceeded
++from slowapi.middleware import SlowAPIMiddleware
+ 
+ import src.routes.chat_routes as chat_routes
+-
++from src.auth.jwt_utils import create_access_token
++from src.rate_limit import limiter
+ 
+ app = FastAPI()
++app.state.limiter = limiter
++app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
++app.add_middleware(SlowAPIMiddleware)
+ app.include_router(chat_routes.router)
+ 
+ client = TestClient(app)
+ 
++TEST_CUSTOMER_ID = "customer-002"
++AUTH_HEADERS = {"Authorization": f"Bearer {create_access_token(TEST_CUSTOMER_ID)}"}
++
+ 
+ def test_chat_route_success(monkeypatch):
+ 
+-    def fake_invoke(state, config):
++    def fake_invoke_agent(customer_id, message, thread_id):
++        # customer_id must come from the authenticated token, never
++        # from client input — this is the actual security guarantee
++        # Phase 1 added, so the test checks it directly.
++        assert customer_id == TEST_CUSTOMER_ID
+ 
+         return {
+             "messages": [
+@@ -23,16 +37,12 @@ def test_chat_route_success(monkeypatch):
+             ]
+         }
+ 
+-    monkeypatch.setattr(
+-        chat_routes.app,
+-        "invoke",
+-        fake_invoke,
+-    )
++    monkeypatch.setattr(chat_routes, "_invoke_agent", fake_invoke_agent)
+ 
+     response = client.post(
+         "/chat",
++        headers=AUTH_HEADERS,
+         json={
+-            "customer_id": "customer-002",
+             "thread_id": "test-thread-001",
+             "message": "What is the status of order 12348?",
+         },
+@@ -50,11 +60,38 @@ def test_chat_route_empty_message():
+ 
+     response = client.post(
+         "/chat",
++        headers=AUTH_HEADERS,
+         json={
+-            "customer_id": "customer-002",
+             "thread_id": "test-thread-002",
+             "message": "",
+         },
+     )
+ 
+-    assert response.status_code == 422
+\ No newline at end of file
++    assert response.status_code == 422
++
++
++def test_chat_route_missing_auth():
++    # No Authorization header at all — must be rejected before the
++    # request ever reaches the agent.
++    response = client.post(
++        "/chat",
++        json={
++            "thread_id": "test-thread-003",
++            "message": "hello",
++        },
++    )
++
++    assert response.status_code == 401
++
++
++def test_chat_route_invalid_token():
++    response = client.post(
++        "/chat",
++        headers={"Authorization": "Bearer not-a-real-token"},
++        json={
++            "thread_id": "test-thread-004",
++            "message": "hello",
++        },
++    )
++
++    assert response.status_code == 401
+diff --git a/tests/test_refund_routes.py b/tests/test_refund_routes.py
+index 0265c89..a453ce0 100644
+--- a/tests/test_refund_routes.py
++++ b/tests/test_refund_routes.py
+@@ -1,21 +1,32 @@
+ from fastapi import FastAPI
+ from fastapi.testclient import TestClient
++from slowapi import _rate_limit_exceeded_handler
++from slowapi.errors import RateLimitExceeded
++from slowapi.middleware import SlowAPIMiddleware
+ 
++from src.auth.jwt_utils import create_access_token
++from src.rate_limit import limiter
+ from src.routes.refund_routes import router
+ 
+-
+ app = FastAPI()
++app.state.limiter = limiter
++app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
++app.add_middleware(SlowAPIMiddleware)
+ app.include_router(router)
+ 
+ client = TestClient(app)
+ 
+ 
++def auth_headers(customer_id: str) -> dict:
++    return {"Authorization": f"Bearer {create_access_token(customer_id)}"}
++
++
+ def test_create_refund_route_success():
+ 
+     response = client.post(
+         "/refund",
++        headers=auth_headers("customer-002"),
+         json={
+-            "customer_id": "customer-002",
+             "order_id": "12345",
+             "reason": "Product is defective",
+         },
+@@ -34,8 +45,8 @@ def test_create_refund_route_invalid_order_id():
+ 
+     response = client.post(
+         "/refund",
++        headers=auth_headers("customer-002"),
+         json={
+-            "customer_id": "customer-002",
+             "order_id": "123",
+             "reason": "Product is defective",
+         },
+@@ -47,8 +58,8 @@ def test_create_refund_route_missing_reason():
+ 
+     response = client.post(
+         "/refund",
++        headers=auth_headers("customer-002"),
+         json={
+-            "customer_id": "customer-002",
+             "order_id": "12345",
+         },
+     )
+@@ -57,11 +68,15 @@ def test_create_refund_route_missing_reason():
+ 
+ 
+ def test_create_refund_route_wrong_customer():
+-
++    # Authenticated AS customer-999 (via the token), attempting to
++    # refund an order that belongs to customer-002. There is no
++    # customer_id field in the body anymore to "get wrong" — this
++    # test exists specifically to prove the authenticated identity
++    # itself is what gets checked (F2's whole point).
+     response = client.post(
+         "/refund",
++        headers=auth_headers("customer-999"),
+         json={
+-            "customer_id": "customer-999",
+             "order_id": "12345",
+             "reason": "Product is defective",
+         },
+@@ -75,13 +90,23 @@ def test_create_refund_route_wrong_customer():
+     assert data["reason"] == "Order not found for this customer."
+ 
+ 
++def test_create_refund_route_missing_auth():
++    response = client.post(
++        "/refund",
++        json={
++            "order_id": "12345",
++            "reason": "Product is defective",
++        },
++    )
++
++    assert response.status_code == 401
++
++
+ def test_get_refund_status_route_success():
+ 
+     response = client.get(
+         "/refund/12348",
+-        params={
+-            "customer_id": "customer-002",
+-        },
++        headers=auth_headers("customer-002"),
+     )
+ 
+     assert response.status_code == 200
+@@ -96,12 +121,12 @@ def test_get_refund_status_route_success():
+ 
+ 
+ def test_get_refund_status_route_wrong_customer():
+-
++    # Same idea as above, for the GET path: authenticated as the
++    # wrong customer should behave exactly like the refund doesn't
++    # exist for them, never leak another customer's refund status.
+     response = client.get(
+         "/refund/12348",
+-        params={
+-            "customer_id": "customer-999",
+-        },
++        headers=auth_headers("customer-999"),
+     )
+ 
+     assert response.status_code == 200
+@@ -116,9 +141,7 @@ def test_get_refund_status_route_nonexistent():
+ 
+     response = client.get(
+         "/refund/99999",
+-        params={
+-            "customer_id": "customer-002",
+-        },
++        headers=auth_headers("customer-002"),
+     )
+ 
+     assert response.status_code == 200
+@@ -126,4 +149,9 @@ def test_get_refund_status_route_nonexistent():
+     data = response.json()
+ 
+     assert data["status"] == "not_found"
+-    assert data["order_id"] == "99999"
+\ No newline at end of file
++    assert data["order_id"] == "99999"
++
++
++def test_get_refund_status_route_missing_auth():
++    response = client.get("/refund/12348")
++    assert response.status_code == 401

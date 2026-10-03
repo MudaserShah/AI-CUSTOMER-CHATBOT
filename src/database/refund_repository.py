@@ -1,23 +1,21 @@
-import os
 import uuid
+from typing import Optional
 
 import psycopg
-from dotenv import load_dotenv
 
-load_dotenv()
-
-
-POSTGRES_URI = os.getenv("POSTGRES_URI")
+from src.database.db_utils import handle_db_errors
+from src.database.pool import get_pool
 
 
 class RefundRepository:
 
+    @handle_db_errors
     def get_existing_refund(
     self,
     customer_id: str,
     order_id: str,
 ):
-        with psycopg.connect(self.database_url) as conn:
+        with self._get_connection() as conn:
             with conn.cursor() as cur:
 
                 cur.execute(
@@ -54,9 +52,15 @@ class RefundRepository:
                 "created_at": row[5],
             }
 
-    def __init__(self, connection_uri=POSTGRES_URI):
-        self.database_url = connection_uri
+    def __init__(self, connection_uri: Optional[str] = None):
+        self._override_uri = connection_uri
 
+    def _get_connection(self):
+        if self._override_uri:
+            return psycopg.connect(self._override_uri)
+        return get_pool().connection()
+
+    @handle_db_errors
     def create_refund_request(
         self,
         customer_id: str,
@@ -65,7 +69,7 @@ class RefundRepository:
     ):
         refund_id = uuid.uuid4()
 
-        with psycopg.connect(self.database_url) as conn:
+        with self._get_connection() as conn:
             with conn.cursor() as cur:
 
                 cur.execute(
@@ -106,12 +110,13 @@ class RefundRepository:
                     "created_at": row[5],
                 }
 
+    @handle_db_errors
     def get_refund_status(
     self,
     customer_id: str,
     order_id: str,
 ):
-        with psycopg.connect(self.database_url) as conn:
+        with self._get_connection() as conn:
             with conn.cursor() as cur:
 
                 cur.execute(

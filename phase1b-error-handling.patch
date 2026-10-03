@@ -1,0 +1,355 @@
+diff --git a/requirements.txt b/requirements.txt
+index f67fca0..36f778d 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -5,6 +5,7 @@ python-dotenv
+ psycopg[binary]
+ pyjwt
+ slowapi
++tenacity
+ openai
+ uvicorn
+ langchain_community
+diff --git a/src/database/db_utils.py b/src/database/db_utils.py
+new file mode 100644
+index 0000000..1321a80
+--- /dev/null
++++ b/src/database/db_utils.py
+@@ -0,0 +1,38 @@
++"""
++Shared decorator for repository methods.
++
++Every repository method talks to Postgres via psycopg. Without this,
++a connection failure or query error inside any method becomes an
++unhandled exception that bubbles all the way up to FastAPI as a raw
++500 with a stack trace. This decorator catches psycopg errors at the
++one place they can actually occur (the DB call), logs the real error
++with the method name for debugging, and re-raises a clean
++DatabaseError that the route layer knows how to turn into a proper
++API response (see src/routes/chat_routes.py, refund_routes.py).
++
++This is a stopgap over duplicating try/except in every method body.
++The real fix for the duplication itself (F9 — every repository
++method repeats connect/cursor/execute boilerplate) is a shared base
++repository, planned for Phase 3.
++"""
++import functools
++import logging
++
++import psycopg
++
++from src.database.errors import DatabaseError
++
++logger = logging.getLogger(__name__)
++
++
++def handle_db_errors(func):
++    @functools.wraps(func)
++    def wrapper(*args, **kwargs):
++        try:
++            return func(*args, **kwargs)
++        except psycopg.Error as exc:
++            logger.exception("Database error in %s", func.__qualname__)
++            raise DatabaseError(
++                f"Database operation failed in {func.__qualname__}"
++            ) from exc
++    return wrapper
+diff --git a/src/database/errors.py b/src/database/errors.py
+new file mode 100644
+index 0000000..f69a1fd
+--- /dev/null
++++ b/src/database/errors.py
+@@ -0,0 +1,8 @@
++class DatabaseError(Exception):
++    """Raised when a database operation fails.
++
++    Wraps the original psycopg error so callers (services/routes) can
++    catch one clean exception type instead of needing to know about
++    psycopg internals, and so the real error gets logged server-side
++    while the API returns a generic message to the client.
++    """
+diff --git a/src/database/order_repository.py b/src/database/order_repository.py
+index eeb27fb..78a8bab 100644
+--- a/src/database/order_repository.py
++++ b/src/database/order_repository.py
+@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
+ from typing import Optional
+ import uuid
+ 
++from src.database.db_utils import handle_db_errors
+ from src.rag.config import settings
+ 
+ class OrderRepository:
+@@ -10,6 +11,7 @@ class OrderRepository:
+     def __init__(self, connection_uri: Optional[str] = None):
+         self.database_url = connection_uri or settings.postgres_uri
+ 
++    @handle_db_errors
+     def get_order(self, order_id, customer_id):
+         with psycopg.connect(self.database_url) as conn:
+             with conn.cursor() as cur:
+@@ -47,6 +49,7 @@ class OrderRepository:
+                 "delivery_address": row[7],
+                 }
+ 
++    @handle_db_errors
+     def update_delivery_address(
+     self,
+     order_id: str,
+@@ -85,6 +88,7 @@ class OrderRepository:
+                 "delivery_address": row[2],
+             }
+         
++    @handle_db_errors
+     def get_refund_eligibility(self, order_id, customer_id):
+         with psycopg.connect(self.database_url) as conn:
+             with conn.cursor() as cur:
+diff --git a/src/database/refund_repository.py b/src/database/refund_repository.py
+index b7d02ec..32b6d3b 100644
+--- a/src/database/refund_repository.py
++++ b/src/database/refund_repository.py
+@@ -3,11 +3,13 @@ from typing import Optional
+ 
+ import psycopg
+ 
++from src.database.db_utils import handle_db_errors
+ from src.rag.config import settings
+ 
+ 
+ class RefundRepository:
+ 
++    @handle_db_errors
+     def get_existing_refund(
+     self,
+     customer_id: str,
+@@ -53,6 +55,7 @@ class RefundRepository:
+     def __init__(self, connection_uri: Optional[str] = None):
+         self.database_url = connection_uri or settings.postgres_uri
+ 
++    @handle_db_errors
+     def create_refund_request(
+         self,
+         customer_id: str,
+@@ -102,6 +105,7 @@ class RefundRepository:
+                     "created_at": row[5],
+                 }
+ 
++    @handle_db_errors
+     def get_refund_status(
+     self,
+     customer_id: str,
+diff --git a/src/database/repository.py b/src/database/repository.py
+index d7597ce..73b5c22 100644
+--- a/src/database/repository.py
++++ b/src/database/repository.py
+@@ -2,6 +2,7 @@ import psycopg
+ import uuid
+ from typing import Optional
+ 
++from src.database.db_utils import handle_db_errors
+ from src.rag.config import settings
+ 
+ class CustomerRepository:
+@@ -9,6 +10,7 @@ class CustomerRepository:
+     def __init__(self, connection_uri: Optional[str] = None):
+         self.database_url = connection_uri or settings.postgres_uri
+ 
++    @handle_db_errors
+     def create_customer(self, customer_id, name, email):
+         with psycopg.connect(self.database_url) as conn:
+             with conn.cursor() as cur:
+@@ -23,6 +25,7 @@ class CustomerRepository:
+ 
+                 return cur.fetchone()
+ 
++    @handle_db_errors
+     def get_customer(self, customer_id):
+         with psycopg.connect(self.database_url) as conn:
+             with conn.cursor() as cur:
+@@ -35,6 +38,7 @@ class CustomerRepository:
+     (customer_id,)
+ )
+                 return cur.fetchone()
++    @handle_db_errors
+     def create_conversation(self, customer_id, thread_id):
+         with psycopg.connect(self.database_url) as conn:
+             with conn.cursor() as cur:
+@@ -48,6 +52,7 @@ class CustomerRepository:
+ )
+                 return cur.fetchone()
+ 
++    @handle_db_errors
+     def get_customer_email(self, customer_id):
+         with psycopg.connect(self.database_url) as conn:
+             with conn.cursor() as cur:
+@@ -67,6 +72,7 @@ class CustomerRepository:
+ 
+                 return row[0]
+             
++    @handle_db_errors
+     def get_conversation(self, customer_id):
+         with psycopg.connect(self.database_url) as conn:
+             with conn.cursor() as cur:
+@@ -102,6 +108,7 @@ class CustomerRepository:
+     customer_id,
+     thread_id
+ )
++    @handle_db_errors
+     def get_conversations(self, customer_id):
+         with psycopg.connect(self.database_url) as conn:
+             with conn.cursor() as cur:
+diff --git a/src/routes/chat_routes.py b/src/routes/chat_routes.py
+index 8d0ab1a..ee9dfa7 100644
+--- a/src/routes/chat_routes.py
++++ b/src/routes/chat_routes.py
+@@ -1,10 +1,15 @@
+-from fastapi import APIRouter, Depends, Request
++import logging
++
++from fastapi import APIRouter, Depends, HTTPException, Request, status
++from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+ 
+ from src.agent.agent import app
+ from src.auth.dependencies import get_current_customer_id
++from src.database.errors import DatabaseError
+ from src.rate_limit import limiter
+ from src.schemas.chat_schemas import ChatRequest, ChatResponse
+ 
++logger = logging.getLogger(__name__)
+ 
+ router = APIRouter(
+     prefix="/chat",
+@@ -12,6 +17,26 @@ router = APIRouter(
+ )
+ 
+ 
++@retry(
++    stop=stop_after_attempt(3),
++    wait=wait_exponential(multiplier=1, min=1, max=4),
++    retry=retry_if_exception_type(Exception),
++    reraise=True,
++)
++def _invoke_agent(customer_id: str, message: str, thread_id: str):
++    """Call the LLM/agent graph with a short retry for transient failures
++    (e.g. the model provider briefly rate-limiting or timing out).
++    Three attempts with short backoff; if it still fails, the caller
++    decides how to respond to the client — see the except block below."""
++    return app.invoke(
++        {
++            "customer_id": customer_id,
++            "messages": [{"role": "user", "content": message}],
++        },
++        config={"configurable": {"thread_id": thread_id}},
++    )
++
++
+ @router.post(
+     "",
+     response_model=ChatResponse,
+@@ -22,23 +47,20 @@ def chat(
+     body: ChatRequest,
+     customer_id: str = Depends(get_current_customer_id),
+ ):
+-
+-    result = app.invoke(
+-        {
+-            "customer_id": customer_id,
+-            "messages": [
+-                {
+-                    "role": "user",
+-                    "content": body.message,
+-                }
+-            ],
+-        },
+-        config={
+-            "configurable": {
+-                "thread_id": body.thread_id,
+-            }
+-        },
+-    )
++    try:
++        result = _invoke_agent(customer_id, body.message, body.thread_id)
++    except DatabaseError:
++        logger.exception("Database error while handling chat for customer_id=%s", customer_id)
++        raise HTTPException(
++            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
++            detail="We're having trouble reaching our systems right now. Please try again shortly.",
++        )
++    except Exception:
++        logger.exception("LLM/agent call failed for customer_id=%s", customer_id)
++        raise HTTPException(
++            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
++            detail="The assistant is temporarily unavailable. Please try again in a moment.",
++        )
+ 
+     return {
+         "thread_id": body.thread_id,
+diff --git a/src/routes/refund_routes.py b/src/routes/refund_routes.py
+index ecf09dd..415f36a 100644
+--- a/src/routes/refund_routes.py
++++ b/src/routes/refund_routes.py
+@@ -1,6 +1,9 @@
+-from fastapi import APIRouter, Depends, Request
++import logging
++
++from fastapi import APIRouter, Depends, HTTPException, Request, status
+ 
+ from src.auth.dependencies import get_current_customer_id
++from src.database.errors import DatabaseError
+ from src.rate_limit import limiter
+ from src.schemas.refund_schemas import (
+     RefundRequest,
+@@ -9,6 +12,7 @@ from src.schemas.refund_schemas import (
+ 
+ from src.services.refund_service import RefundService
+ 
++logger = logging.getLogger(__name__)
+ 
+ router = APIRouter(
+     prefix="/refund",
+@@ -29,11 +33,18 @@ def create_refund(
+     body: RefundRequest,
+     customer_id: str = Depends(get_current_customer_id),
+ ):
+-    return refund_service.create_refund_request(
+-        customer_id=customer_id,
+-        order_id=body.order_id,
+-        reason=body.reason,
+-    )
++    try:
++        return refund_service.create_refund_request(
++            customer_id=customer_id,
++            order_id=body.order_id,
++            reason=body.reason,
++        )
++    except DatabaseError:
++        logger.exception("Database error while creating refund for customer_id=%s", customer_id)
++        raise HTTPException(
++            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
++            detail="We're having trouble reaching our systems right now. Please try again shortly.",
++        )
+ 
+ @router.get(
+     "/{order_id}",
+@@ -45,10 +56,17 @@ def get_refund_status(
+     order_id: str,
+     customer_id: str = Depends(get_current_customer_id),
+ ):
+-    result = refund_service.get_refund_status(
+-        customer_id=customer_id,
+-        order_id=order_id,
+-    )
++    try:
++        result = refund_service.get_refund_status(
++            customer_id=customer_id,
++            order_id=order_id,
++        )
++    except DatabaseError:
++        logger.exception("Database error while fetching refund status for customer_id=%s", customer_id)
++        raise HTTPException(
++            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
++            detail="We're having trouble reaching our systems right now. Please try again shortly.",
++        )
+ 
+     if result is None:
+         return {

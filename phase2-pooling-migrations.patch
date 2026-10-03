@@ -1,0 +1,701 @@
+diff --git a/alembic.ini b/alembic.ini
+new file mode 100644
+index 0000000..4bb67a6
+--- /dev/null
++++ b/alembic.ini
+@@ -0,0 +1,152 @@
++# A generic, single database configuration.
++
++[alembic]
++# path to migration scripts.
++# this is typically a path given in POSIX (e.g. forward slashes)
++# format, relative to the token %(here)s which refers to the location of this
++# ini file
++script_location = %(here)s/migrations
++
++# template used to generate migration file names; The default value is %%(rev)s_%%(slug)s
++# Uncomment the line below if you want the files to be prepended with date and time
++# see https://alembic.sqlalchemy.org/en/latest/tutorial.html#editing-the-ini-file
++# for all available tokens
++# file_template = %%(year)d_%%(month).2d_%%(day).2d_%%(hour).2d%%(minute).2d-%%(rev)s_%%(slug)s
++# Or organize into date-based subdirectories (requires recursive_version_locations = true)
++# file_template = %%(year)d/%%(month).2d/%%(day).2d_%%(hour).2d%%(minute).2d_%%(second).2d_%%(rev)s_%%(slug)s
++
++# sys.path path, will be prepended to sys.path if present.
++# defaults to the current working directory.  for multiple paths, the path separator
++# is defined by "path_separator" below.
++prepend_sys_path = .
++
++
++# timezone to use when rendering the date within the migration file
++# as well as the filename.
++# If specified, requires the tzdata library which can be installed by adding
++# `alembic[tz]` to the pip requirements.
++# string value is passed to ZoneInfo()
++# leave blank for localtime
++# timezone =
++
++# max length of characters to apply to the "slug" field
++# truncate_slug_length = 40
++
++# set to 'true' to run the environment during
++# the 'revision' command, regardless of autogenerate
++# revision_environment = false
++
++# set to 'true' to allow .pyc and .pyo files without
++# a source .py file to be detected as revisions in the
++# versions/ directory
++# sourceless = false
++
++# version location specification; This defaults
++# to <script_location>/versions.  When using multiple version
++# directories, initial revisions must be specified with --version-path.
++# The path separator used here should be the separator specified by "path_separator"
++# below.
++# version_locations = %(here)s/bar:%(here)s/bat:%(here)s/alembic/versions
++
++# path_separator; This indicates what character is used to split lists of file
++# paths, including version_locations and prepend_sys_path within configparser
++# files such as alembic.ini.
++# The default rendered in new alembic.ini files is "os", which uses os.pathsep
++# to provide os-dependent path splitting.
++#
++# Note that in order to support legacy alembic.ini files, this default does NOT
++# take place if path_separator is not present in alembic.ini.  If this
++# option is omitted entirely, fallback logic is as follows:
++#
++# 1. Parsing of the version_locations option falls back to using the legacy
++#    "version_path_separator" key, which if absent then falls back to the legacy
++#    behavior of splitting on spaces and/or commas.
++# 2. Parsing of the prepend_sys_path option falls back to the legacy
++#    behavior of splitting on spaces, commas, or colons.
++#
++# Valid values for path_separator are:
++#
++# path_separator = :
++# path_separator = ;
++# path_separator = space
++# path_separator = newline
++#
++# Use os.pathsep. Default configuration used for new projects.
++path_separator = os
++
++# set to 'true' to search source files recursively
++# in each "version_locations" directory
++# new in Alembic version 1.10
++# recursive_version_locations = false
++
++# the output encoding used when revision files
++# are written from script.py.mako
++# output_encoding = utf-8
++
++# database URL.  This is consumed by the user-maintained env.py script only.
++# other means of configuring database URLs may be customized within the env.py
++# file.
++# Placeholder only — migrations/env.py overrides this at runtime with
++# settings.postgres_uri (from .env), so the real connection string
++# lives in exactly one place in this project.
++sqlalchemy.url = driver://user:pass@localhost/dbname
++
++
++[post_write_hooks]
++# post_write_hooks defines scripts or Python functions that are run
++# on newly generated revision scripts.  See the documentation for further
++# detail and examples
++
++# format using "black" - use the console_scripts runner, against the "black" entrypoint
++# hooks = black
++# black.type = console_scripts
++# black.entrypoint = black
++# black.options = -l 79 REVISION_SCRIPT_FILENAME
++
++# lint with attempts to fix using "ruff" - use the module runner, against the "ruff" module
++# hooks = ruff
++# ruff.type = module
++# ruff.module = ruff
++# ruff.options = check --fix REVISION_SCRIPT_FILENAME
++
++# Alternatively, use the exec runner to execute a binary found on your PATH
++# hooks = ruff
++# ruff.type = exec
++# ruff.executable = ruff
++# ruff.options = check --fix REVISION_SCRIPT_FILENAME
++
++# Logging configuration.  This is also consumed by the user-maintained
++# env.py script only.
++[loggers]
++keys = root,sqlalchemy,alembic
++
++[handlers]
++keys = console
++
++[formatters]
++keys = generic
++
++[logger_root]
++level = WARNING
++handlers = console
++qualname =
++
++[logger_sqlalchemy]
++level = WARNING
++handlers =
++qualname = sqlalchemy.engine
++
++[logger_alembic]
++level = INFO
++handlers =
++qualname = alembic
++
++[handler_console]
++class = StreamHandler
++args = (sys.stderr,)
++level = NOTSET
++formatter = generic
++
++[formatter_generic]
++format = %(levelname)-5.5s [%(name)s] %(message)s
++datefmt = %H:%M:%S
+diff --git a/migrations/README b/migrations/README
+new file mode 100644
+index 0000000..98e4f9c
+--- /dev/null
++++ b/migrations/README
+@@ -0,0 +1 @@
++Generic single-database configuration.
+\ No newline at end of file
+diff --git a/migrations/env.py b/migrations/env.py
+new file mode 100644
+index 0000000..4934b40
+--- /dev/null
++++ b/migrations/env.py
+@@ -0,0 +1,93 @@
++import sys
++from logging.config import fileConfig
++from pathlib import Path
++
++from sqlalchemy import engine_from_config
++from sqlalchemy import pool
++
++from alembic import context
++
++# Make "src" importable so we can reuse the app's own config instead of
++# duplicating the DB URL in alembic.ini. This is the single most
++# important line in this file: it means POSTGRES_URI only has to be
++# set in one place (.env), not copy-pasted into alembic.ini where it
++# would be easy to forget to update and easy to accidentally commit.
++sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
++from src.rag.config import settings  # noqa: E402
++
++# this is the Alembic Config object, which provides
++# access to the values within the .ini file in use.
++config = context.config
++
++# Override whatever is in alembic.ini with the real URL from settings.
++config.set_main_option("sqlalchemy.url", settings.postgres_uri)
++
++# Interpret the config file for Python logging.
++# This line sets up loggers basically.
++if config.config_file_name is not None:
++    fileConfig(config.config_file_name)
++
++# This project uses raw psycopg (no SQLAlchemy ORM models), so there is
++# no declarative MetaData to diff against. That means `alembic revision
++# --autogenerate` won't detect schema changes for you — every migration
++# in versions/ is written by hand, describing exactly what changed. See
++# migrations/README (and the project's production-readiness report) for
++# why this is the right tradeoff for a raw-SQL codebase.
++target_metadata = None
++
++# other values from the config, defined by the needs of env.py,
++# can be acquired:
++# my_important_option = config.get_main_option("my_important_option")
++# ... etc.
++
++
++def run_migrations_offline() -> None:
++    """Run migrations in 'offline' mode.
++
++    This configures the context with just a URL
++    and not an Engine, though an Engine is acceptable
++    here as well.  By skipping the Engine creation
++    we don't even need a DBAPI to be available.
++
++    Calls to context.execute() here emit the given string to the
++    script output.
++
++    """
++    url = config.get_main_option("sqlalchemy.url")
++    context.configure(
++        url=url,
++        target_metadata=target_metadata,
++        literal_binds=True,
++        dialect_opts={"paramstyle": "named"},
++    )
++
++    with context.begin_transaction():
++        context.run_migrations()
++
++
++def run_migrations_online() -> None:
++    """Run migrations in 'online' mode.
++
++    In this scenario we need to create an Engine
++    and associate a connection with the context.
++
++    """
++    connectable = engine_from_config(
++        config.get_section(config.config_ini_section, {}),
++        prefix="sqlalchemy.",
++        poolclass=pool.NullPool,
++    )
++
++    with connectable.connect() as connection:
++        context.configure(
++            connection=connection, target_metadata=target_metadata
++        )
++
++        with context.begin_transaction():
++            context.run_migrations()
++
++
++if context.is_offline_mode():
++    run_migrations_offline()
++else:
++    run_migrations_online()
+diff --git a/migrations/script.py.mako b/migrations/script.py.mako
+new file mode 100644
+index 0000000..1101630
+--- /dev/null
++++ b/migrations/script.py.mako
+@@ -0,0 +1,28 @@
++"""${message}
++
++Revision ID: ${up_revision}
++Revises: ${down_revision | comma,n}
++Create Date: ${create_date}
++
++"""
++from typing import Sequence, Union
++
++from alembic import op
++import sqlalchemy as sa
++${imports if imports else ""}
++
++# revision identifiers, used by Alembic.
++revision: str = ${repr(up_revision)}
++down_revision: Union[str, Sequence[str], None] = ${repr(down_revision)}
++branch_labels: Union[str, Sequence[str], None] = ${repr(branch_labels)}
++depends_on: Union[str, Sequence[str], None] = ${repr(depends_on)}
++
++
++def upgrade() -> None:
++    """Upgrade schema."""
++    ${upgrades if upgrades else "pass"}
++
++
++def downgrade() -> None:
++    """Downgrade schema."""
++    ${downgrades if downgrades else "pass"}
+diff --git a/migrations/versions/a64e2b1f1cb3_baseline_schema_reconstructed_from_.py b/migrations/versions/a64e2b1f1cb3_baseline_schema_reconstructed_from_.py
+new file mode 100644
+index 0000000..52de084
+--- /dev/null
++++ b/migrations/versions/a64e2b1f1cb3_baseline_schema_reconstructed_from_.py
+@@ -0,0 +1,107 @@
++r"""baseline schema reconstructed from existing ad hoc tables
++
++Revision ID: a64e2b1f1cb3
++Revises:
++Create Date: 2026-10-03 10:07:25.005135
++
++IMPORTANT — read before running this:
++
++This project's tables (customers, conversations, orders,
++refund_requests) were originally created by hand, with no migration
++tool and no schema file (see the production-readiness report, finding
++F4). This migration reconstructs that schema from the columns used
++throughout src/database/*.py, so that from this point forward, every
++future schema change is tracked by a migration instead of a manual
++`CREATE TABLE`/`ALTER TABLE` someone has to remember they ran.
++
++Because it's a reconstruction, not a dump of the real schema, verify
++it against your actual database before trusting it — for example:
++
++    psql "$POSTGRES_URI" -c "\d customers"
++    psql "$POSTGRES_URI" -c "\d conversations"
++    psql "$POSTGRES_URI" -c "\d orders"
++    psql "$POSTGRES_URI" -c "\d refund_requests"
++
++...and adjust the column types/constraints below (nullability, string
++lengths, defaults) to match what you actually have. The column *names*
++are correct (every one is used in a live query somewhere in the
++codebase); the exact types are a best-effort guess.
++
++Two different ways to apply this, depending on the database:
++
++  * Your EXISTING database (tables already exist):
++    Do NOT run `alembic upgrade head` — that would try to CREATE TABLE
++    on tables that are already there and fail. Instead, tell Alembic
++    "the database is already at this point":
++
++        alembic stamp head
++
++  * A FRESH database (a new teammate's machine, CI, staging):
++    Tables don't exist yet, so the normal command creates them:
++
++        alembic upgrade head
++"""
++from typing import Sequence, Union
++
++from alembic import op
++import sqlalchemy as sa
++from sqlalchemy.dialects import postgresql
++
++
++# revision identifiers, used by Alembic.
++revision: str = 'a64e2b1f1cb3'
++down_revision: Union[str, Sequence[str], None] = None
++branch_labels: Union[str, Sequence[str], None] = None
++depends_on: Union[str, Sequence[str], None] = None
++
++
++def upgrade() -> None:
++    op.create_table(
++        "customers",
++        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
++        sa.Column("customer_id", sa.String, nullable=False, unique=True),
++        sa.Column("name", sa.String, nullable=True),
++        sa.Column("email", sa.String, nullable=True),
++        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
++    )
++
++    op.create_table(
++        "conversations",
++        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
++        sa.Column("customer_id", sa.String, sa.ForeignKey("customers.customer_id"), nullable=False),
++        sa.Column("thread_id", sa.String, nullable=False, unique=True),
++        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
++    )
++    op.create_index("ix_conversations_customer_id", "conversations", ["customer_id"])
++
++    op.create_table(
++        "orders",
++        sa.Column("order_id", sa.String, primary_key=True),
++        sa.Column("customer_id", sa.String, sa.ForeignKey("customers.customer_id"), nullable=False),
++        sa.Column("status", sa.String, nullable=False),
++        sa.Column("dispatch_date", sa.DateTime(timezone=True), nullable=True),
++        sa.Column("shipping_date", sa.DateTime(timezone=True), nullable=True),
++        sa.Column("receiving_date", sa.DateTime(timezone=True), nullable=True),
++        sa.Column("delivered_at", sa.DateTime(timezone=True), nullable=True),
++        sa.Column("delivery_address", sa.String, nullable=True),
++    )
++    op.create_index("ix_orders_customer_id", "orders", ["customer_id"])
++
++    op.create_table(
++        "refund_requests",
++        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
++        sa.Column("customer_id", sa.String, sa.ForeignKey("customers.customer_id"), nullable=False),
++        sa.Column("order_id", sa.String, sa.ForeignKey("orders.order_id"), nullable=False),
++        sa.Column("reason", sa.String, nullable=False),
++        sa.Column("status", sa.String, nullable=False, server_default="pending"),
++        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
++    )
++    op.create_index("ix_refund_requests_customer_id", "refund_requests", ["customer_id"])
++    op.create_index("ix_refund_requests_order_id", "refund_requests", ["order_id"])
++
++
++def downgrade() -> None:
++    op.drop_table("refund_requests")
++    op.drop_table("orders")
++    op.drop_table("conversations")
++    op.drop_table("customers")
+diff --git a/requirements.txt b/requirements.txt
+index 36f778d..5200eb7 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -2,10 +2,11 @@ fastapi
+ pydantic
+ pydantic-settings
+ python-dotenv
+-psycopg[binary]
++psycopg[binary,pool]
+ pyjwt
+ slowapi
+ tenacity
++alembic
+ openai
+ uvicorn
+ langchain_community
+diff --git a/src/database/order_repository.py b/src/database/order_repository.py
+index 78a8bab..617d63b 100644
+--- a/src/database/order_repository.py
++++ b/src/database/order_repository.py
+@@ -4,16 +4,21 @@ from typing import Optional
+ import uuid
+ 
+ from src.database.db_utils import handle_db_errors
+-from src.rag.config import settings
++from src.database.pool import get_pool
+ 
+ class OrderRepository:
+ 
+     def __init__(self, connection_uri: Optional[str] = None):
+-        self.database_url = connection_uri or settings.postgres_uri
++        self._override_uri = connection_uri
++
++    def _get_connection(self):
++        if self._override_uri:
++            return psycopg.connect(self._override_uri)
++        return get_pool().connection()
+ 
+     @handle_db_errors
+     def get_order(self, order_id, customer_id):
+-        with psycopg.connect(self.database_url) as conn:
++        with self._get_connection() as conn:
+             with conn.cursor() as cur:
+                 cur.execute(
+                     """
+@@ -56,7 +61,7 @@ class OrderRepository:
+     customer_id: str,
+     new_address: str,
+ ):
+-        with psycopg.connect(self.database_url) as conn:
++        with self._get_connection() as conn:
+             with conn.cursor() as cur:
+ 
+                 cur.execute(
+@@ -90,7 +95,7 @@ class OrderRepository:
+         
+     @handle_db_errors
+     def get_refund_eligibility(self, order_id, customer_id):
+-        with psycopg.connect(self.database_url) as conn:
++        with self._get_connection() as conn:
+             with conn.cursor() as cur:
+ 
+                 cur.execute(
+diff --git a/src/database/pool.py b/src/database/pool.py
+new file mode 100644
+index 0000000..1a39d5e
+--- /dev/null
++++ b/src/database/pool.py
+@@ -0,0 +1,58 @@
++"""
++Shared PostgreSQL connection pool.
++
++Before this, every repository method opened a brand-new TCP connection
++to Postgres (psycopg.connect(...)) and tore it down when the `with`
++block exited. Under real traffic that's a new connection + handshake
++per query — slow, and it can exhaust Postgres's max_connections.
++
++get_pool() returns one process-wide psycopg_pool.ConnectionPool,
++created lazily on first use and reused by every repository. init_pool()
++/ close_pool() are called explicitly from the FastAPI lifespan in
++main.py so the pool opens at startup (failing fast if the DB is
++unreachable, same philosophy as the config fail-fast in Phase 0) and
++closes cleanly at shutdown, instead of relying on import-time side
++effects (the same anti-pattern flagged for the LangGraph checkpointer
++— see src/agent/agent.py).
++"""
++import threading
++
++from psycopg_pool import ConnectionPool
++
++from src.rag.config import settings
++
++_pool: ConnectionPool | None = None
++_lock = threading.Lock()
++
++
++def init_pool(min_size: int = 1, max_size: int = 10) -> ConnectionPool:
++    """Create and open the pool. Safe to call more than once — a second
++    call is a no-op if the pool already exists. Called from the FastAPI
++    lifespan at startup."""
++    global _pool
++    with _lock:
++        if _pool is None:
++            _pool = ConnectionPool(
++                conninfo=settings.postgres_uri,
++                min_size=min_size,
++                max_size=max_size,
++                open=True,
++            )
++    return _pool
++
++
++def get_pool() -> ConnectionPool:
++    """Return the shared pool, creating it on first use if the FastAPI
++    lifespan hasn't already (e.g. when a repository is used directly
++    in a script or test, outside the running API)."""
++    if _pool is None:
++        return init_pool()
++    return _pool
++
++
++def close_pool() -> None:
++    global _pool
++    with _lock:
++        if _pool is not None:
++            _pool.close()
++            _pool = None
+diff --git a/src/database/refund_repository.py b/src/database/refund_repository.py
+index 32b6d3b..807527b 100644
+--- a/src/database/refund_repository.py
++++ b/src/database/refund_repository.py
+@@ -4,7 +4,7 @@ from typing import Optional
+ import psycopg
+ 
+ from src.database.db_utils import handle_db_errors
+-from src.rag.config import settings
++from src.database.pool import get_pool
+ 
+ 
+ class RefundRepository:
+@@ -15,7 +15,7 @@ class RefundRepository:
+     customer_id: str,
+     order_id: str,
+ ):
+-        with psycopg.connect(self.database_url) as conn:
++        with self._get_connection() as conn:
+             with conn.cursor() as cur:
+ 
+                 cur.execute(
+@@ -53,7 +53,12 @@ class RefundRepository:
+             }
+ 
+     def __init__(self, connection_uri: Optional[str] = None):
+-        self.database_url = connection_uri or settings.postgres_uri
++        self._override_uri = connection_uri
++
++    def _get_connection(self):
++        if self._override_uri:
++            return psycopg.connect(self._override_uri)
++        return get_pool().connection()
+ 
+     @handle_db_errors
+     def create_refund_request(
+@@ -64,7 +69,7 @@ class RefundRepository:
+     ):
+         refund_id = uuid.uuid4()
+ 
+-        with psycopg.connect(self.database_url) as conn:
++        with self._get_connection() as conn:
+             with conn.cursor() as cur:
+ 
+                 cur.execute(
+@@ -111,7 +116,7 @@ class RefundRepository:
+     customer_id: str,
+     order_id: str,
+ ):
+-        with psycopg.connect(self.database_url) as conn:
++        with self._get_connection() as conn:
+             with conn.cursor() as cur:
+ 
+                 cur.execute(
+diff --git a/src/database/repository.py b/src/database/repository.py
+index 73b5c22..f4b6ed3 100644
+--- a/src/database/repository.py
++++ b/src/database/repository.py
+@@ -3,16 +3,24 @@ import uuid
+ from typing import Optional
+ 
+ from src.database.db_utils import handle_db_errors
+-from src.rag.config import settings
++from src.database.pool import get_pool
+ 
+ class CustomerRepository:
+ 
+     def __init__(self, connection_uri: Optional[str] = None):
+-        self.database_url = connection_uri or settings.postgres_uri
++        # connection_uri lets tests/scripts point at a different database
++        # by opening a direct connection instead of the shared pool.
++        # Normal app usage leaves this unset and uses the pool.
++        self._override_uri = connection_uri
++
++    def _get_connection(self):
++        if self._override_uri:
++            return psycopg.connect(self._override_uri)
++        return get_pool().connection()
+ 
+     @handle_db_errors
+     def create_customer(self, customer_id, name, email):
+-        with psycopg.connect(self.database_url) as conn:
++        with self._get_connection() as conn:
+             with conn.cursor() as cur:
+                 cur.execute(
+                     """
+@@ -27,7 +35,7 @@ class CustomerRepository:
+ 
+     @handle_db_errors
+     def get_customer(self, customer_id):
+-        with psycopg.connect(self.database_url) as conn:
++        with self._get_connection() as conn:
+             with conn.cursor() as cur:
+                 cur.execute(
+     """
+@@ -40,7 +48,7 @@ class CustomerRepository:
+                 return cur.fetchone()
+     @handle_db_errors
+     def create_conversation(self, customer_id, thread_id):
+-        with psycopg.connect(self.database_url) as conn:
++        with self._get_connection() as conn:
+             with conn.cursor() as cur:
+                 cur.execute(
+     """
+@@ -54,7 +62,7 @@ class CustomerRepository:
+ 
+     @handle_db_errors
+     def get_customer_email(self, customer_id):
+-        with psycopg.connect(self.database_url) as conn:
++        with self._get_connection() as conn:
+             with conn.cursor() as cur:
+                 cur.execute(
+                 """
+@@ -74,7 +82,7 @@ class CustomerRepository:
+             
+     @handle_db_errors
+     def get_conversation(self, customer_id):
+-        with psycopg.connect(self.database_url) as conn:
++        with self._get_connection() as conn:
+             with conn.cursor() as cur:
+                 cur.execute(
+             """
+@@ -110,7 +118,7 @@ class CustomerRepository:
+ )
+     @handle_db_errors
+     def get_conversations(self, customer_id):
+-        with psycopg.connect(self.database_url) as conn:
++        with self._get_connection() as conn:
+             with conn.cursor() as cur:
+                 cur.execute(
+                 """
+diff --git a/src/main.py b/src/main.py
+index 30a110a..3ee18e0 100644
+--- a/src/main.py
++++ b/src/main.py
+@@ -13,6 +13,7 @@ from slowapi.middleware import SlowAPIMiddleware
+ from langchain_openrouter import ChatOpenRouter
+ from qdrant_client import QdrantClient
+ 
++from src.database.pool import init_pool, close_pool
+ from src.rag.api_logic import app_state
+ from src.rag.config import settings
+ from src.rag.rag_service import get_embedding_provider
+@@ -32,6 +33,9 @@ async def lifespan(app: FastAPI):
+     for d in [settings.uploads_dir, settings.uploads_dir, settings.markdown_dir]:
+         Path(d).mkdir(parents=True, exist_ok=True)
+ 
++    logger.info("Opening PostgreSQL connection pool...")
++    init_pool()
++
+     logger.info("Loading embedding model...")
+     app_state["embeddings"] = get_embedding_provider(settings.embedding_provider)
+ 
+@@ -51,6 +55,7 @@ async def lifespan(app: FastAPI):
+     yield
+ 
+     app_state.clear()
++    close_pool()
+     logger.info("Server shut down.")
+ 
+ 

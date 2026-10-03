@@ -1,0 +1,110 @@
+diff --git a/requirements.txt b/requirements.txt
+index 1993f01..2ae05af 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -1,6 +1,8 @@
+ fastapi
+ pydantic
++pydantic-settings
+ python-dotenv
++psycopg[binary]
+ openai
+ uvicorn
+ langchain_community
+diff --git a/src/database/order_repository.py b/src/database/order_repository.py
+index 2940fad..eeb27fb 100644
+--- a/src/database/order_repository.py
++++ b/src/database/order_repository.py
+@@ -1,17 +1,14 @@
+-import os
+ import psycopg
+-from dotenv import load_dotenv
+ from datetime import datetime, timedelta, timezone
++from typing import Optional
+ import uuid
+ 
+-load_dotenv()
+-
+-POSTGRES_URI = os.getenv("POSTGRES_URI", "postgresql://ai_chatbot:Shahg@401@localhost:5432/ai_customer_chatbot")
++from src.rag.config import settings
+ 
+ class OrderRepository:
+ 
+-    def __init__(self, connection_uri=POSTGRES_URI):
+-        self.database_url = connection_uri
++    def __init__(self, connection_uri: Optional[str] = None):
++        self.database_url = connection_uri or settings.postgres_uri
+ 
+     def get_order(self, order_id, customer_id):
+         with psycopg.connect(self.database_url) as conn:
+diff --git a/src/database/refund_repository.py b/src/database/refund_repository.py
+index 6388db3..b7d02ec 100644
+--- a/src/database/refund_repository.py
++++ b/src/database/refund_repository.py
+@@ -1,13 +1,9 @@
+-import os
+ import uuid
++from typing import Optional
+ 
+ import psycopg
+-from dotenv import load_dotenv
+ 
+-load_dotenv()
+-
+-
+-POSTGRES_URI = os.getenv("POSTGRES_URI")
++from src.rag.config import settings
+ 
+ 
+ class RefundRepository:
+@@ -54,8 +50,8 @@ class RefundRepository:
+                 "created_at": row[5],
+             }
+ 
+-    def __init__(self, connection_uri=POSTGRES_URI):
+-        self.database_url = connection_uri
++    def __init__(self, connection_uri: Optional[str] = None):
++        self.database_url = connection_uri or settings.postgres_uri
+ 
+     def create_refund_request(
+         self,
+diff --git a/src/database/repository.py b/src/database/repository.py
+index 20567c9..d7597ce 100644
+--- a/src/database/repository.py
++++ b/src/database/repository.py
+@@ -1,16 +1,13 @@
+-import os
+ import psycopg
+-from dotenv import load_dotenv
+ import uuid
++from typing import Optional
+ 
+-load_dotenv()
+-
+-POSTGRES_URI = os.getenv("POSTGRES_URI", "postgresql://ai_chatbot:Shahg@401@localhost:5432/ai_customer_chatbot")
++from src.rag.config import settings
+ 
+ class CustomerRepository:
+ 
+-    def __init__(self, connection_uri: str = POSTGRES_URI):
+-        self.database_url = connection_uri
++    def __init__(self, connection_uri: Optional[str] = None):
++        self.database_url = connection_uri or settings.postgres_uri
+ 
+     def create_customer(self, customer_id, name, email):
+         with psycopg.connect(self.database_url) as conn:
+diff --git a/src/rag/config.py b/src/rag/config.py
+index 5e209c1..a0552a1 100644
+--- a/src/rag/config.py
++++ b/src/rag/config.py
+@@ -20,6 +20,10 @@ class Settings(BaseSettings):
+     qdrant_api_key:str
+     qdrant_collection: str = "customer_knowledge"
+ 
++    # Database — required, no default. The app must fail to start
++    # rather than silently fall back to an insecure/incorrect connection.
++    postgres_uri: str
++
+     #files storage
+     # uploads_dir: str= "uploads_tmp"
+     uploads_dir: str= "uploads"

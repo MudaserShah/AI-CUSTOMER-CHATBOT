@@ -1,0 +1,466 @@
+diff --git a/.env.example b/.env.example
+index aecda3e..19109db 100644
+--- a/.env.example
++++ b/.env.example
+@@ -4,6 +4,15 @@
+ # PostgreSQL connection string (required — app fails to start without it)
+ POSTGRES_URI=postgresql://USERNAME:PASSWORD@localhost:5432/ai_customer_chatbot
+ 
++# JWT signing secret (required). Generate a real one with:
++#   python -c "import secrets; print(secrets.token_hex(32))"
++JWT_SECRET=replace_with_a_long_random_secret
++JWT_EXPIRY_MINUTES=60
++
++# Comma-separated list of frontend origins allowed to call this API.
++# Leave empty in local dev if you're testing with curl/Postman (no browser).
++CORS_ALLOWED_ORIGINS=http://localhost:3000
++
+ # OpenRouter LLM API key (required)
+ OPENROUTER_API_KEY=your_openrouter_api_key_here
+ 
+diff --git a/requirements.txt b/requirements.txt
+index 2ae05af..f67fca0 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -3,6 +3,8 @@ pydantic
+ pydantic-settings
+ python-dotenv
+ psycopg[binary]
++pyjwt
++slowapi
+ openai
+ uvicorn
+ langchain_community
+diff --git a/src/auth/__init__.py b/src/auth/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/src/auth/dependencies.py b/src/auth/dependencies.py
+new file mode 100644
+index 0000000..38def7d
+--- /dev/null
++++ b/src/auth/dependencies.py
+@@ -0,0 +1,37 @@
++"""
++FastAPI dependency for authenticated routes.
++
++Usage in a route:
++
++    @router.post("")
++    def chat(request: ChatRequest, customer_id: str = Depends(get_current_customer_id)):
++        ...
++
++customer_id no longer comes from the request body/query string — it is
++derived from a verified JWT in the Authorization header. A route that
++depends on get_current_customer_id cannot be called successfully
++without a valid token, and the customer_id it receives cannot be
++spoofed by the caller.
++"""
++from fastapi import Depends, HTTPException, status
++from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
++
++from src.auth.jwt_utils import InvalidTokenError, decode_access_token
++
++_bearer_scheme = HTTPBearer(
++    scheme_name="BearerAuth",
++    description="Paste the access token obtained from POST /auth/token",
++)
++
++
++def get_current_customer_id(
++    credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
++) -> str:
++    try:
++        return decode_access_token(credentials.credentials)
++    except InvalidTokenError as exc:
++        raise HTTPException(
++            status_code=status.HTTP_401_UNAUTHORIZED,
++            detail=f"Invalid or expired token: {exc}",
++            headers={"WWW-Authenticate": "Bearer"},
++        ) from exc
+diff --git a/src/auth/jwt_utils.py b/src/auth/jwt_utils.py
+new file mode 100644
+index 0000000..c20592f
+--- /dev/null
++++ b/src/auth/jwt_utils.py
+@@ -0,0 +1,54 @@
++"""
++Minimal JWT issuing/verification helpers.
++
++In production, the token handed to this service's clients should be
++minted by whatever system already authenticates the customer (e.g.
++the e-commerce site's own login). This service only needs to be able
++to *verify* a token and trust its `sub` (subject) claim as the real,
++authenticated customer_id.
++
++create_access_token() is provided so this project can be tested end
++to end without a separate host application — see src/routes/auth_routes.py
++for the one place it's used.
++"""
++from datetime import datetime, timedelta, timezone
++
++import jwt
++
++from src.rag.config import settings
++
++ALGORITHM = "HS256"
++
++
++def create_access_token(customer_id: str) -> str:
++    """Issue a signed JWT whose subject (sub) is the customer_id."""
++    now = datetime.now(timezone.utc)
++    payload = {
++        "sub": customer_id,
++        "iat": now,
++        "exp": now + timedelta(minutes=settings.jwt_expiry_minutes),
++    }
++    return jwt.encode(payload, settings.jwt_secret, algorithm=ALGORITHM)
++
++
++class InvalidTokenError(Exception):
++    """Raised when a token is missing, malformed, expired, or has a bad signature."""
++
++
++def decode_access_token(token: str) -> str:
++    """Verify a JWT and return the customer_id (sub claim) it was issued for.
++
++    Raises InvalidTokenError for any problem — expired, tampered,
++    wrong signature, or missing the expected claim. The caller (the
++    FastAPI dependency) turns this into a 401 response.
++    """
++    try:
++        payload = jwt.decode(token, settings.jwt_secret, algorithms=[ALGORITHM])
++    except jwt.PyJWTError as exc:
++        raise InvalidTokenError(str(exc)) from exc
++
++    customer_id = payload.get("sub")
++    if not customer_id:
++        raise InvalidTokenError("Token is missing the 'sub' (customer_id) claim.")
++
++    return customer_id
+diff --git a/src/main.py b/src/main.py
+index 111389a..30a110a 100644
+--- a/src/main.py
++++ b/src/main.py
+@@ -6,6 +6,9 @@ from pathlib import Path
+ 
+ from fastapi import FastAPI
+ from fastapi.middleware.cors import CORSMiddleware
++from slowapi import _rate_limit_exceeded_handler
++from slowapi.errors import RateLimitExceeded
++from slowapi.middleware import SlowAPIMiddleware
+ # from langchain_openai import ChatOpenAI
+ from langchain_openrouter import ChatOpenRouter
+ from qdrant_client import QdrantClient
+@@ -14,10 +17,12 @@ from src.rag.api_logic import app_state
+ from src.rag.config import settings
+ from src.rag.rag_service import get_embedding_provider
+ from src.rag.routes import router
++from src.rate_limit import limiter
++from src.routes.auth_routes import router as auth_router
+ from src.routes.refund_routes import router as refund_router
+ from src.routes.chat_routes import router as chat_router
+ 
+-logging.basicConfig(level=logging.INFO, format="%(levelname)s pip install --upgrade pip| %(message)s")
++logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(message)s")
+ logger = logging.getLogger(__name__)
+ 
+ 
+@@ -56,8 +61,22 @@ app = FastAPI(
+     lifespan    = lifespan,
+ )
+ 
+-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
++app.state.limiter = limiter
++app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
++app.add_middleware(SlowAPIMiddleware)
++
++# CORS: no wildcard. cors_origins_list is empty by default (see
++# src/rag/config.py) — set CORS_ALLOWED_ORIGINS in .env to your real
++# frontend domain(s) before this is reachable from a browser.
++app.add_middleware(
++    CORSMiddleware,
++    allow_origins=settings.cors_origins_list,
++    allow_methods=["GET", "POST"],
++    allow_headers=["Authorization", "Content-Type"],
++)
++
+ app.include_router(router)
++app.include_router(auth_router)
+ app.include_router(refund_router)
+ app.include_router(chat_router)
+ 
+diff --git a/src/rag/config.py b/src/rag/config.py
+index a0552a1..1ff398c 100644
+--- a/src/rag/config.py
++++ b/src/rag/config.py
+@@ -24,6 +24,20 @@ class Settings(BaseSettings):
+     # rather than silently fall back to an insecure/incorrect connection.
+     postgres_uri: str
+ 
++    # Auth — required, no default. Used to sign/verify JWTs.
++    # In production this must be a long random secret, kept out of git.
++    jwt_secret: str
++    jwt_expiry_minutes: int = 60
++
++    # CORS — comma-separated list of allowed origins in production,
++    # e.g. "https://app.example.com,https://admin.example.com".
++    # Left empty by default so nothing is allowed until explicitly configured.
++    cors_allowed_origins: str = ""
++
++    @property
++    def cors_origins_list(self) -> list[str]:
++        return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]
++
+     #files storage
+     # uploads_dir: str= "uploads_tmp"
+     uploads_dir: str= "uploads"
+diff --git a/src/rate_limit.py b/src/rate_limit.py
+new file mode 100644
+index 0000000..2078dca
+--- /dev/null
++++ b/src/rate_limit.py
+@@ -0,0 +1,16 @@
++"""
++Shared slowapi Limiter instance.
++
++Defined in its own module (rather than inside main.py) so route files
++can import and apply @limiter.limit(...) without a circular import on
++main.py.
++
++Keyed by remote IP for now. Once every route requires auth (see
++src/auth/dependencies.py), this should be switched to key by the
++authenticated customer_id instead, so one customer can't exhaust
++another customer's quota from a shared IP (e.g. behind one NAT/proxy).
++"""
++from slowapi import Limiter
++from slowapi.util import get_remote_address
++
++limiter = Limiter(key_func=get_remote_address)
+diff --git a/src/routes/auth_routes.py b/src/routes/auth_routes.py
+new file mode 100644
+index 0000000..ce60171
+--- /dev/null
++++ b/src/routes/auth_routes.py
+@@ -0,0 +1,48 @@
++"""
++NOTE on this route's role in the architecture:
++
++In a real deployment, this chatbot sits behind a host application
++(the e-commerce site) that already knows who is logged in. That host
++app should mint the JWT itself and hand it to the chat widget — this
++service would then only ever *verify* tokens, never issue them.
++
++This endpoint exists so the project can be run and tested end to end
++without building that separate host application. It reuses the same
++identity check (customer_id + email on file) that VerificationService
++already uses for the address-change flow, so "proving you are the
++customer" is based on the same standard everywhere in this codebase.
++"""
++from fastapi import APIRouter, HTTPException, status
++
++from src.auth.jwt_utils import create_access_token
++from src.rag.config import settings
++from src.schemas.auth_schemas import TokenRequest, TokenResponse
++from src.services.verification_service import VerificationService
++
++router = APIRouter(
++    prefix="/auth",
++    tags=["Auth"],
++)
++
++verification_service = VerificationService()
++
++
++@router.post("/token", response_model=TokenResponse)
++def issue_token(request: TokenRequest):
++    result = verification_service.verify_customer(
++        customer_id=request.customer_id,
++        provided_email=request.email,
++    )
++
++    if not result["verified"]:
++        raise HTTPException(
++            status_code=status.HTTP_401_UNAUTHORIZED,
++            detail=result["reason"],
++        )
++
++    token = create_access_token(customer_id=request.customer_id)
++
++    return TokenResponse(
++        access_token=token,
++        expires_in_minutes=settings.jwt_expiry_minutes,
++    )
+diff --git a/src/routes/chat_routes.py b/src/routes/chat_routes.py
+index 292d8df..8d0ab1a 100644
+--- a/src/routes/chat_routes.py
++++ b/src/routes/chat_routes.py
+@@ -1,6 +1,8 @@
+-from fastapi import APIRouter
++from fastapi import APIRouter, Depends, Request
+ 
+ from src.agent.agent import app
++from src.auth.dependencies import get_current_customer_id
++from src.rate_limit import limiter
+ from src.schemas.chat_schemas import ChatRequest, ChatResponse
+ 
+ 
+@@ -14,26 +16,31 @@ router = APIRouter(
+     "",
+     response_model=ChatResponse,
+ )
+-def chat(request: ChatRequest):
++@limiter.limit("20/minute")
++def chat(
++    request: Request,
++    body: ChatRequest,
++    customer_id: str = Depends(get_current_customer_id),
++):
+ 
+     result = app.invoke(
+         {
+-            "customer_id": request.customer_id,
++            "customer_id": customer_id,
+             "messages": [
+                 {
+                     "role": "user",
+-                    "content": request.message,
++                    "content": body.message,
+                 }
+             ],
+         },
+         config={
+             "configurable": {
+-                "thread_id": request.thread_id,
++                "thread_id": body.thread_id,
+             }
+         },
+     )
+ 
+     return {
+-        "thread_id": request.thread_id,
++        "thread_id": body.thread_id,
+         "response": result["messages"][-1].content,
+     }
+\ No newline at end of file
+diff --git a/src/routes/refund_routes.py b/src/routes/refund_routes.py
+index c7e2fc4..ecf09dd 100644
+--- a/src/routes/refund_routes.py
++++ b/src/routes/refund_routes.py
+@@ -1,5 +1,7 @@
+-from fastapi import APIRouter
++from fastapi import APIRouter, Depends, Request
+ 
++from src.auth.dependencies import get_current_customer_id
++from src.rate_limit import limiter
+ from src.schemas.refund_schemas import (
+     RefundRequest,
+     RefundResponse,
+@@ -21,22 +23,27 @@ refund_service = RefundService()
+     "",
+     response_model=RefundResponse,
+ )
++@limiter.limit("10/minute")
+ def create_refund(
+-    request: RefundRequest,
++    request: Request,
++    body: RefundRequest,
++    customer_id: str = Depends(get_current_customer_id),
+ ):
+     return refund_service.create_refund_request(
+-        customer_id=request.customer_id,
+-        order_id=request.order_id,
+-        reason=request.reason,
++        customer_id=customer_id,
++        order_id=body.order_id,
++        reason=body.reason,
+     )
+ 
+ @router.get(
+     "/{order_id}",
+     response_model=RefundResponse,
+ )
++@limiter.limit("30/minute")
+ def get_refund_status(
++    request: Request,
+     order_id: str,
+-    customer_id: str,
++    customer_id: str = Depends(get_current_customer_id),
+ ):
+     result = refund_service.get_refund_status(
+         customer_id=customer_id,
+diff --git a/src/schemas/auth_schemas.py b/src/schemas/auth_schemas.py
+new file mode 100644
+index 0000000..7759556
+--- /dev/null
++++ b/src/schemas/auth_schemas.py
+@@ -0,0 +1,21 @@
++from pydantic import BaseModel, Field
++
++
++class TokenRequest(BaseModel):
++
++    customer_id: str = Field(
++        ...,
++        description="Unique customer identifier",
++    )
++
++    email: str = Field(
++        ...,
++        description="Email on file for this customer, used to prove identity",
++    )
++
++
++class TokenResponse(BaseModel):
++
++    access_token: str
++    token_type: str = "bearer"
++    expires_in_minutes: int
+diff --git a/src/schemas/chat_schemas.py b/src/schemas/chat_schemas.py
+index af0ffec..4ff5245 100644
+--- a/src/schemas/chat_schemas.py
++++ b/src/schemas/chat_schemas.py
+@@ -3,10 +3,10 @@ from pydantic import BaseModel, Field
+ 
+ class ChatRequest(BaseModel):
+ 
+-    customer_id: str = Field(
+-        ...,
+-        description="Unique customer identifier",
+-    )
++    # customer_id intentionally removed — it is derived from the
++    # authenticated JWT (see src/auth/dependencies.py), never from
++    # client input. Trusting a client-supplied customer_id let any
++    # caller read or act as any other customer.
+ 
+     thread_id: str = Field(
+         ...,
+diff --git a/src/schemas/refund_schemas.py b/src/schemas/refund_schemas.py
+index c8f732f..d4bf93c 100644
+--- a/src/schemas/refund_schemas.py
++++ b/src/schemas/refund_schemas.py
+@@ -3,10 +3,8 @@ from pydantic import BaseModel, Field
+ 
+ class RefundRequest(BaseModel):
+ 
+-    customer_id: str = Field(
+-        ...,
+-        description="Unique customer identifier",
+-    )
++    # customer_id intentionally removed — derived from the authenticated
++    # JWT, never from client input. See src/auth/dependencies.py.
+ 
+     order_id: str = Field(
+     ...,
+@@ -37,10 +35,8 @@ class RefundResponse(BaseModel):
+ 
+ class RefundStatusRequest(BaseModel):
+ 
+-    customer_id: str = Field(
+-        ...,
+-        description="Unique customer identifier",
+-    )
++    # customer_id intentionally removed — derived from the authenticated
++    # JWT, never from client input. See src/auth/dependencies.py.
+ 
+     order_id: str = Field(
+         ...,

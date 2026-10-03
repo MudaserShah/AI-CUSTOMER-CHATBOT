@@ -1,19 +1,26 @@
-import os
 import psycopg
-from dotenv import load_dotenv
 import uuid
+from typing import Optional
 
-load_dotenv()
-
-POSTGRES_URI = os.getenv("POSTGRES_URI", "postgresql://ai_chatbot:Shahg@401@localhost:5432/ai_customer_chatbot")
+from src.database.db_utils import handle_db_errors
+from src.database.pool import get_pool
 
 class CustomerRepository:
 
-    def __init__(self, connection_uri: str = POSTGRES_URI):
-        self.database_url = connection_uri
+    def __init__(self, connection_uri: Optional[str] = None):
+        # connection_uri lets tests/scripts point at a different database
+        # by opening a direct connection instead of the shared pool.
+        # Normal app usage leaves this unset and uses the pool.
+        self._override_uri = connection_uri
 
+    def _get_connection(self):
+        if self._override_uri:
+            return psycopg.connect(self._override_uri)
+        return get_pool().connection()
+
+    @handle_db_errors
     def create_customer(self, customer_id, name, email):
-        with psycopg.connect(self.database_url) as conn:
+        with self._get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -26,8 +33,9 @@ class CustomerRepository:
 
                 return cur.fetchone()
 
+    @handle_db_errors
     def get_customer(self, customer_id):
-        with psycopg.connect(self.database_url) as conn:
+        with self._get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
     """
@@ -38,8 +46,9 @@ class CustomerRepository:
     (customer_id,)
 )
                 return cur.fetchone()
+    @handle_db_errors
     def create_conversation(self, customer_id, thread_id):
-        with psycopg.connect(self.database_url) as conn:
+        with self._get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
     """
@@ -51,8 +60,9 @@ class CustomerRepository:
 )
                 return cur.fetchone()
 
+    @handle_db_errors
     def get_customer_email(self, customer_id):
-        with psycopg.connect(self.database_url) as conn:
+        with self._get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                 """
@@ -70,8 +80,9 @@ class CustomerRepository:
 
                 return row[0]
             
+    @handle_db_errors
     def get_conversation(self, customer_id):
-        with psycopg.connect(self.database_url) as conn:
+        with self._get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
             """
@@ -105,8 +116,9 @@ class CustomerRepository:
     customer_id,
     thread_id
 )
+    @handle_db_errors
     def get_conversations(self, customer_id):
-        with psycopg.connect(self.database_url) as conn:
+        with self._get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                 """

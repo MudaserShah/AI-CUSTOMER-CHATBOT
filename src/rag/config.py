@@ -20,6 +20,24 @@ class Settings(BaseSettings):
     qdrant_api_key:str
     qdrant_collection: str = "customer_knowledge"
 
+    # Database — required, no default. The app must fail to start
+    # rather than silently fall back to an insecure/incorrect connection.
+    postgres_uri: str
+
+    # Auth — required, no default. Used to sign/verify JWTs.
+    # In production this must be a long random secret, kept out of git.
+    jwt_secret: str
+    jwt_expiry_minutes: int = 60
+
+    # CORS — comma-separated list of allowed origins in production,
+    # e.g. "https://app.example.com,https://admin.example.com".
+    # Left empty by default so nothing is allowed until explicitly configured.
+    cors_allowed_origins: str = ""
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]
+
     #files storage
     # uploads_dir: str= "uploads_tmp"
     uploads_dir: str= "uploads"
