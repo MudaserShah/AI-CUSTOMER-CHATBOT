@@ -12,12 +12,16 @@ identity check (customer_id + email on file) that VerificationService
 already uses for the address-change flow, so "proving you are the
 customer" is based on the same standard everywhere in this codebase.
 """
+import logging
+
 from fastapi import APIRouter, HTTPException, status
 
 from src.auth.jwt_utils import create_access_token
 from src.rag.config import settings
 from src.schemas.auth_schemas import TokenRequest, TokenResponse
 from src.services.verification_service import VerificationService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/auth",
@@ -35,10 +39,18 @@ def issue_token(request: TokenRequest):
     )
 
     if not result["verified"]:
+        # Deliberately not logging the email they tried — it's PII and
+        # of limited debugging value; customer_id + outcome is enough.
+        logger.warning(
+            "Token issuance rejected: customer_id=%s reason=%s",
+            request.customer_id, result["reason"],
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=result["reason"],
         )
+
+    logger.info("Token issued: customer_id=%s", request.customer_id)
 
     token = create_access_token(customer_id=request.customer_id)
 

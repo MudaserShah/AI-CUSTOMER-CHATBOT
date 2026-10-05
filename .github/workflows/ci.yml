@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ai_customer_chatbot_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      POSTGRES_URI: postgresql://postgres:postgres@localhost:5432/ai_customer_chatbot_ci
+      JWT_SECRET: ci-test-secret-not-for-production
+      JWT_EXPIRY_MINUTES: "60"
+      CORS_ALLOWED_ORIGINS: ""
+      OPENROUTER_API_KEY: ci-placeholder
+      QDRANT_URL: http://localhost:6333
+      QDRANT_API_KEY: ci-placeholder
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install black ruff pytest
+
+      # These two run but don't block the pipeline yet — this codebase
+      # has pre-existing lint/format debt (see pyproject.toml's [tool.ruff]
+      # comment). Remove `continue-on-error` once that debt is paid down,
+      # so lint failures actually block merges the way they should.
+      - name: Lint (ruff)
+        run: ruff check .
+        continue-on-error: true
+
+      - name: Format check (black)
+        run: black --check .
+        continue-on-error: true
+
+      - name: Apply database migrations
+        run: alembic upgrade head
+
+      - name: Run tests
+        run: pytest -v
+
+  build-docker-image:
+    runs-on: ubuntu-latest
+    # Build-only verification that the Dockerfile still produces a
+    # working image — this does NOT push anywhere or deploy. Wiring an
+    # actual deploy step (to Railway, Fly, AWS, etc.) needs that
+    # platform's credentials stored as GitHub Actions secrets, which is
+    # an account-specific setup step for you to do when you pick a host
+    # — see DEPLOYMENT.md.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t ai-customer-chatbot:ci .

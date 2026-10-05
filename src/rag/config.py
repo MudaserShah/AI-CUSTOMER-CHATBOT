@@ -2,8 +2,10 @@
 #Reads from .env automatically through pydantic-settings
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
+load_dotenv(ROOT_DIR / ".env")
 
 class Settings(BaseSettings):
 

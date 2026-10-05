@@ -1,0 +1,323 @@
+diff --git a/src/agent/agent.py b/src/agent/agent.py
+index c046ee4..f66ceaf 100644
+--- a/src/agent/agent.py
++++ b/src/agent/agent.py
+@@ -1,11 +1,10 @@
+-import os
+ import json
+ from langchain_openrouter import ChatOpenRouter
+ from langgraph.graph import StateGraph, START, END, MessagesState
+ from langchain_core.messages import ToolMessage, SystemMessage
+ from langgraph.checkpoint.postgres import PostgresSaver
+ from src.database.order_repository import OrderRepository
+-from dotenv import load_dotenv
++from src.rag.config import settings
+ from src.tools.order_tool import get_order
+ from src.tools.knowledge_tool import search_knowledge_base
+ from src.tools.refund_tool import create_refund_request
+@@ -13,8 +12,12 @@ from src.tools.refund_status_tool import get_refund_status
+ from src.services.refund_service import RefundService
+ from src.tools.address_tool import change_delivery_address
+ from src.services.address_service import AddressService
+-load_dotenv()
+-postgres_uri = os.getenv("POSTGRES_URI")
++
++# Single source of truth for the DB URL (src/rag/config.py) — was
++# previously its own os.getenv("POSTGRES_URI") call here, inconsistent
++# with every other part of the app (see Phase 0/F6 in the
++# production-readiness report).
++postgres_uri = settings.postgres_uri
+ 
+ 
+ class CustomerState(MessagesState):
+@@ -23,7 +26,7 @@ class CustomerState(MessagesState):
+ 
+ 
+ model = ChatOpenRouter(
+-    model="openrouter/free",
++    model=settings.llm_model,
+     temperature=0
+ )
+ tools = [get_order, search_knowledge_base, create_refund_request, get_refund_status, change_delivery_address]
+@@ -329,6 +332,20 @@ graph.add_conditional_edges(
+ )
+ graph.add_edge("tools", "agent")
+ 
++# NOTE on this module-level setup (see F5 in the production-readiness
++# report): ideally this checkpointer would be created inside FastAPI's
++# lifespan, not at import time. The blocker is that `app` (the compiled
++# graph) is imported directly by chat_routes.py and by several tests
++# (test_compiled_graph.py, test_agent_*.py) as a ready-to-use module
++# singleton — moving graph compilation into the lifespan would mean
++# either restructuring those call sites around dependency injection or
++# introducing a lazy proxy object, which is a bigger change than this
++# phase's scope. What IS fixed here: the connection string now comes
++# from the single unified settings object (was its own os.getenv call),
++# and close_agent_checkpointer() below gives the lifespan a way to
++# actually close this connection on shutdown — see src/main.py — instead
++# of it being silently abandoned (the original bug: __enter__() was
++# called with no matching __exit__() anywhere in the codebase).
+ checkpointer_cm = PostgresSaver.from_conn_string(postgres_uri)
+ checkpointer = checkpointer_cm.__enter__()
+ checkpointer.setup()
+@@ -337,3 +354,9 @@ app = graph.compile(
+         checkpointer=checkpointer
+     )
+ 
++
++def close_agent_checkpointer() -> None:
++    """Call from the FastAPI lifespan on shutdown to cleanly close the
++    checkpointer's connection instead of leaking it at process exit."""
++    checkpointer_cm.__exit__(None, None, None)
++
+diff --git a/src/main.py b/src/main.py
+index 3ee18e0..da0f46d 100644
+--- a/src/main.py
++++ b/src/main.py
+@@ -13,6 +13,7 @@ from slowapi.middleware import SlowAPIMiddleware
+ from langchain_openrouter import ChatOpenRouter
+ from qdrant_client import QdrantClient
+ 
++from src.agent.agent import close_agent_checkpointer
+ from src.database.pool import init_pool, close_pool
+ from src.rag.api_logic import app_state
+ from src.rag.config import settings
+@@ -45,9 +46,9 @@ async def lifespan(app: FastAPI):
+     # logger.info("Connecting to OpenAI LLM...")
+     # app_state["llm"] = ChatOpenAI(model=settings.llm_model, temperature=0, api_key=settings.openai_api_key)
+     
+-    logger.info("Connecting to OpenRouter LLM...")
++    logger.info("Connecting to OpenRouter LLM (%s)...", settings.llm_model)
+     app_state["llm"] = ChatOpenRouter(
+-    model="openrouter/free",
++    model=settings.llm_model,
+     temperature=0,
+     )
+ 
+@@ -56,6 +57,7 @@ async def lifespan(app: FastAPI):
+ 
+     app_state.clear()
+     close_pool()
++    close_agent_checkpointer()
+     logger.info("Server shut down.")
+ 
+ 
+@@ -85,6 +87,16 @@ app.include_router(auth_router)
+ app.include_router(refund_router)
+ app.include_router(chat_router)
+ 
++
++@app.get("/health", tags=["Health"])
++def health_check():
++    """Liveness/readiness check for load balancers and uptime monitors.
++    Deliberately does not touch the database or any external service —
++    a slow DB shouldn't make the load balancer think the whole process
++    is dead. If you need a DB-aware check too, add a separate
++    /health/db endpoint rather than making this one do double duty."""
++    return {"status": "ok"}
++
+ if __name__ == "__main__":
+     import uvicorn
+     uvicorn.run(
+diff --git a/src/routes/auth_routes.py b/src/routes/auth_routes.py
+index ce60171..2e51a75 100644
+--- a/src/routes/auth_routes.py
++++ b/src/routes/auth_routes.py
+@@ -12,6 +12,8 @@ identity check (customer_id + email on file) that VerificationService
+ already uses for the address-change flow, so "proving you are the
+ customer" is based on the same standard everywhere in this codebase.
+ """
++import logging
++
+ from fastapi import APIRouter, HTTPException, status
+ 
+ from src.auth.jwt_utils import create_access_token
+@@ -19,6 +21,8 @@ from src.rag.config import settings
+ from src.schemas.auth_schemas import TokenRequest, TokenResponse
+ from src.services.verification_service import VerificationService
+ 
++logger = logging.getLogger(__name__)
++
+ router = APIRouter(
+     prefix="/auth",
+     tags=["Auth"],
+@@ -35,11 +39,19 @@ def issue_token(request: TokenRequest):
+     )
+ 
+     if not result["verified"]:
++        # Deliberately not logging the email they tried — it's PII and
++        # of limited debugging value; customer_id + outcome is enough.
++        logger.warning(
++            "Token issuance rejected: customer_id=%s reason=%s",
++            request.customer_id, result["reason"],
++        )
+         raise HTTPException(
+             status_code=status.HTTP_401_UNAUTHORIZED,
+             detail=result["reason"],
+         )
+ 
++    logger.info("Token issued: customer_id=%s", request.customer_id)
++
+     token = create_access_token(customer_id=request.customer_id)
+ 
+     return TokenResponse(
+diff --git a/src/services/address_service.py b/src/services/address_service.py
+index 68aa375..30418f9 100644
+--- a/src/services/address_service.py
++++ b/src/services/address_service.py
+@@ -1,6 +1,10 @@
++import logging
++
+ from src.database.order_repository import OrderRepository
+ from src.services.verification_service import VerificationService
+ 
++logger = logging.getLogger(__name__)
++
+ 
+ class AddressService:
+ 
+@@ -30,6 +34,10 @@ class AddressService:
+ )
+ 
+         if not verification["verified"]:
++            logger.warning(
++                "Address change rejected (identity verification failed): customer_id=%s order_id=%s",
++                customer_id, order_id,
++            )
+             return {
+         "status": "rejected",
+         "reason": verification["reason"],
+@@ -40,12 +48,20 @@ class AddressService:
+         )
+ 
+         if order is None:
++            logger.warning(
++                "Address change rejected (order not found): customer_id=%s order_id=%s",
++                customer_id, order_id,
++            )
+             return {
+                 "status": "rejected",
+                 "reason": "Order not found for this customer.",
+             }
+ 
+         if order["status"] == "Delivered":
++            logger.info(
++                "Address change rejected (already delivered): customer_id=%s order_id=%s",
++                customer_id, order_id,
++            )
+             return {
+                 "status": "rejected",
+                 "reason": "Delivery address cannot be changed after the order is delivered.",
+@@ -58,11 +74,22 @@ class AddressService:
+         )
+ 
+         if updated_order is None:
++            logger.error(
++                "Address update failed unexpectedly: customer_id=%s order_id=%s",
++                customer_id, order_id,
++            )
+             return {
+                 "status": "failed",
+                 "reason": "Unable to update delivery address.",
+             }
+ 
++        # Deliberately not logging new_address itself — it's PII, and
++        # order_id + customer_id is enough to look the change up if needed.
++        logger.info(
++            "Delivery address updated: customer_id=%s order_id=%s",
++            customer_id, order_id,
++        )
++
+         return {
+             "status": "updated",
+             "order_id": updated_order["order_id"],
+@@ -81,4 +108,4 @@ if __name__ == "__main__":
+         provided_email="ahmed@example.com",
+     )
+ 
+-    print(result)
+\ No newline at end of file
++    print(result)
+diff --git a/src/services/refund_service.py b/src/services/refund_service.py
+index e8a6441..069aaef 100644
+--- a/src/services/refund_service.py
++++ b/src/services/refund_service.py
+@@ -1,7 +1,11 @@
++import logging
++
+ from src.database.order_repository import OrderRepository
+ from src.database.refund_repository import RefundRepository
+ from psycopg.errors import UniqueViolation
+ 
++logger = logging.getLogger(__name__)
++
+ 
+ class RefundService:
+ 
+@@ -32,6 +36,10 @@ class RefundService:
+         )
+ 
+         if order is None:
++            logger.warning(
++                "Refund rejected (order not found): customer_id=%s order_id=%s",
++                customer_id, order_id,
++            )
+             return {
+                 "status": "rejected",
+                 "order_id": order_id,
+@@ -45,6 +53,10 @@ class RefundService:
+         )
+ 
+         if not eligibility["eligible"]:
++            logger.info(
++                "Refund rejected (not eligible: %s): customer_id=%s order_id=%s",
++                eligibility["reason"], customer_id, order_id,
++            )
+             return {
+                 "status": "rejected",
+                 "order_id": order_id,
+@@ -60,6 +72,10 @@ class RefundService:
+         )
+ 
+         if existing_refund is not None:
++            logger.info(
++                "Refund already exists: customer_id=%s order_id=%s refund_id=%s",
++                customer_id, order_id, existing_refund["id"],
++            )
+             return {
+                 "status": "already_exists",
+                 "refund_request_id": existing_refund["id"],
+@@ -82,6 +98,14 @@ class RefundService:
+     )
+ 
+         except UniqueViolation:
++            # Race condition: another request created the refund between
++            # our check above and this insert. Not an error — treat it
++            # the same as "already exists".
++            logger.info(
++                "Refund creation hit a race condition, treating as already_exists: "
++                "customer_id=%s order_id=%s",
++                customer_id, order_id,
++            )
+             existing_refund = (
+               self.refund_repository.get_existing_refund(
+             customer_id,
+@@ -103,6 +127,11 @@ class RefundService:
+ 
+             raise
+ 
++        logger.info(
++            "Refund request submitted: customer_id=%s order_id=%s refund_id=%s",
++            customer_id, order_id, refund_request["id"],
++        )
++
+         return {
+             "status": "submitted",
+             "refund_request_id": refund_request["id"],
+@@ -131,4 +160,4 @@ if __name__ == "__main__":
+         reason="Product is defective",
+     )
+ 
+-    print(result)
+\ No newline at end of file
++    print(result)

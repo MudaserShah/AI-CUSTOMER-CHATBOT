@@ -15,3 +15,19 @@ ai-customer-chatbot = "ai_customer_chatbot:main"
 [build-system]
 requires = ["uv_build>=0.12.3,<0.13.0"]
 build-backend = "uv_build"
+
+[tool.black]
+line-length = 100
+target-version = ["py313"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+# Start with a small, high-signal rule set rather than everything ruff
+# offers: E/F catch real bugs (unused imports, undefined names, syntax
+# issues) and I keeps imports sorted. Running `ruff check .` today
+# still reports existing issues in this codebase — that's expected for
+# a first-time adoption; fix them incrementally rather than in one
+# large, hard-to-review commit. Expand this list (e.g. add "B" for
+# bugbear, "UP" for pyupgrade) once the codebase is clean under E/F/I.
+select = ["E", "F", "I"]

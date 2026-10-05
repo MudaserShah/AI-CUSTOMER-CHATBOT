@@ -1,11 +1,10 @@
-import os
 import json
 from langchain_openrouter import ChatOpenRouter
 from langgraph.graph import StateGraph, START, END, MessagesState
 from langchain_core.messages import ToolMessage, SystemMessage
 from langgraph.checkpoint.postgres import PostgresSaver
 from src.database.order_repository import OrderRepository
-from dotenv import load_dotenv
+from src.rag.config import settings
 from src.tools.order_tool import get_order
 from src.tools.knowledge_tool import search_knowledge_base
 from src.tools.refund_tool import create_refund_request
@@ -13,8 +12,12 @@ from src.tools.refund_status_tool import get_refund_status
 from src.services.refund_service import RefundService
 from src.tools.address_tool import change_delivery_address
 from src.services.address_service import AddressService
-load_dotenv()
-postgres_uri = os.getenv("POSTGRES_URI")
+
+# Single source of truth for the DB URL (src/rag/config.py) — was
+# previously its own os.getenv("POSTGRES_URI") call here, inconsistent
+# with every other part of the app (see Phase 0/F6 in the
+# production-readiness report).
+postgres_uri = settings.postgres_uri
 
 
 class CustomerState(MessagesState):
@@ -23,7 +26,7 @@ class CustomerState(MessagesState):
 
 
 model = ChatOpenRouter(
-    model="openrouter/free",
+    model=settings.llm_model,
     temperature=0
 )
 tools = [get_order, search_knowledge_base, create_refund_request, get_refund_status, change_delivery_address]
@@ -329,6 +332,20 @@ graph.add_conditional_edges(
 )
 graph.add_edge("tools", "agent")
 
+# NOTE on this module-level setup (see F5 in the production-readiness
+# report): ideally this checkpointer would be created inside FastAPI's
+# lifespan, not at import time. The blocker is that `app` (the compiled
+# graph) is imported directly by chat_routes.py and by several tests
+# (test_compiled_graph.py, test_agent_*.py) as a ready-to-use module
+# singleton — moving graph compilation into the lifespan would mean
+# either restructuring those call sites around dependency injection or
+# introducing a lazy proxy object, which is a bigger change than this
+# phase's scope. What IS fixed here: the connection string now comes
+# from the single unified settings object (was its own os.getenv call),
+# and close_agent_checkpointer() below gives the lifespan a way to
+# actually close this connection on shutdown — see src/main.py — instead
+# of it being silently abandoned (the original bug: __enter__() was
+# called with no matching __exit__() anywhere in the codebase).
 checkpointer_cm = PostgresSaver.from_conn_string(postgres_uri)
 checkpointer = checkpointer_cm.__enter__()
 checkpointer.setup()
@@ -336,4 +353,10 @@ checkpointer.setup()
 app = graph.compile(
         checkpointer=checkpointer
     )
+
+
+def close_agent_checkpointer() -> None:
+    """Call from the FastAPI lifespan on shutdown to cleanly close the
+    checkpointer's connection instead of leaking it at process exit."""
+    checkpointer_cm.__exit__(None, None, None)
 

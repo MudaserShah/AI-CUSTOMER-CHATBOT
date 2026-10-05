@@ -11,12 +11,9 @@ openai
 uvicorn
 langchain_community
 langchain_huggingface
-sentence-transformers
 langchain_openai
 qdrant_client
 pyPDF
 langchain-openrouter
 langgraph-checkpoint-postgres
 langgraph
-pydantic[email]
-python-multipart

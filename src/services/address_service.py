@@ -1,5 +1,9 @@
+import logging
+
 from src.database.order_repository import OrderRepository
 from src.services.verification_service import VerificationService
+
+logger = logging.getLogger(__name__)
 
 
 class AddressService:
@@ -30,6 +34,10 @@ class AddressService:
 )
 
         if not verification["verified"]:
+            logger.warning(
+                "Address change rejected (identity verification failed): customer_id=%s order_id=%s",
+                customer_id, order_id,
+            )
             return {
         "status": "rejected",
         "reason": verification["reason"],
@@ -40,12 +48,20 @@ class AddressService:
         )
 
         if order is None:
+            logger.warning(
+                "Address change rejected (order not found): customer_id=%s order_id=%s",
+                customer_id, order_id,
+            )
             return {
                 "status": "rejected",
                 "reason": "Order not found for this customer.",
             }
 
         if order["status"] == "Delivered":
+            logger.info(
+                "Address change rejected (already delivered): customer_id=%s order_id=%s",
+                customer_id, order_id,
+            )
             return {
                 "status": "rejected",
                 "reason": "Delivery address cannot be changed after the order is delivered.",
@@ -58,10 +74,21 @@ class AddressService:
         )
 
         if updated_order is None:
+            logger.error(
+                "Address update failed unexpectedly: customer_id=%s order_id=%s",
+                customer_id, order_id,
+            )
             return {
                 "status": "failed",
                 "reason": "Unable to update delivery address.",
             }
+
+        # Deliberately not logging new_address itself — it's PII, and
+        # order_id + customer_id is enough to look the change up if needed.
+        logger.info(
+            "Delivery address updated: customer_id=%s order_id=%s",
+            customer_id, order_id,
+        )
 
         return {
             "status": "updated",

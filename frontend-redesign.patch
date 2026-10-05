@@ -1,0 +1,994 @@
+diff --git a/frontend/.env.example b/frontend/.env.example
+new file mode 100644
+index 0000000..854ceb9
+--- /dev/null
++++ b/frontend/.env.example
+@@ -0,0 +1,4 @@
++# Points the frontend at your backend API.
++# Local dev (default if unset): http://localhost:8000
++# Cloud deployment: set this to your deployed backend's URL.
++VITE_API_BASE_URL=http://localhost:8000
+diff --git a/frontend/.gitignore b/frontend/.gitignore
+index a547bf3..438657a 100644
+--- a/frontend/.gitignore
++++ b/frontend/.gitignore
+@@ -11,6 +11,7 @@ node_modules
+ dist
+ dist-ssr
+ *.local
++.env
+ 
+ # Editor directories and files
+ .vscode/*
+diff --git a/frontend/index.html b/frontend/index.html
+index 0fca6f0..b8fc712 100644
+--- a/frontend/index.html
++++ b/frontend/index.html
+@@ -4,7 +4,13 @@
+     <meta charset="UTF-8" />
+     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+-    <title>frontend</title>
++    <link rel="preconnect" href="https://fonts.googleapis.com" />
++    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
++    <link
++      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&family=Space+Grotesk:wght@500;600&display=swap"
++      rel="stylesheet"
++    />
++    <title>TechNest Support</title>
+   </head>
+   <body>
+     <div id="root"></div>
+diff --git a/frontend/src/App.css b/frontend/src/App.css
+index 0e797c6..769b8dd 100644
+--- a/frontend/src/App.css
++++ b/frontend/src/App.css
+@@ -1,224 +1,434 @@
++:root {
++  --bg: #12151a;
++  --surface: #1a1e25;
++  --surface-raised: #20252d;
++  --border: #2a3039;
++  --text: #eceef2;
++  --text-muted: #8690a0;
++  --accent: #f2a33c;
++  --accent-strong: #ffb85c;
++  --confirm: #4ecdc1;
++  --danger: #e8604c;
++}
++
+ * {
+   box-sizing: border-box;
+ }
+ 
+ body {
+   margin: 0;
+-  font-family: Inter, system-ui, sans-serif;
+-  background: #0f1115;
+-  color: #f5f5f5;
++  font-family: 'IBM Plex Sans', system-ui, sans-serif;
++  background: var(--bg);
++  color: var(--text);
+ }
+ 
+ button,
+-textarea {
++textarea,
++input {
+   font: inherit;
++  color: inherit;
++}
++
++h1,
++h2,
++.brand,
++.gate-mark {
++  font-family: 'Space Grotesk', 'IBM Plex Sans', sans-serif;
++}
++
++/* ---------- Identify gate ---------- */
++
++.gate {
++  min-height: 100vh;
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  background:
++    radial-gradient(circle at 20% 20%, rgba(242, 163, 60, 0.06), transparent 40%),
++    radial-gradient(circle at 80% 80%, rgba(78, 205, 193, 0.05), transparent 40%),
++    var(--bg);
++  padding: 24px;
++}
++
++.gate-panel {
++  width: 100%;
++  max-width: 380px;
++  background: var(--surface);
++  border: 1px solid var(--border);
++  border-radius: 10px;
++  padding: 40px 32px;
++  display: flex;
++  flex-direction: column;
++  gap: 16px;
++}
++
++.gate-mark {
++  font-size: 28px;
++  color: var(--accent);
++  line-height: 1;
+ }
+ 
++.gate-panel h1 {
++  margin: 0;
++  font-size: 22px;
++  font-weight: 600;
++}
++
++.gate-subtitle {
++  margin: -8px 0 8px;
++  color: var(--text-muted);
++  font-size: 14px;
++}
++
++.gate-panel label {
++  display: flex;
++  flex-direction: column;
++  gap: 6px;
++  font-size: 13px;
++  color: var(--text-muted);
++}
++
++.gate-panel input {
++  background: var(--surface-raised);
++  border: 1px solid var(--border);
++  border-radius: 6px;
++  padding: 10px 12px;
++  font-size: 15px;
++  font-family: 'IBM Plex Mono', monospace;
++  color: var(--text);
++  outline: none;
++  transition: border-color 0.15s ease;
++}
++
++.gate-panel input:focus {
++  border-color: var(--accent);
++}
++
++.gate-error {
++  background: rgba(232, 96, 76, 0.1);
++  border: 1px solid rgba(232, 96, 76, 0.3);
++  color: var(--danger);
++  font-size: 13px;
++  padding: 10px 12px;
++  border-radius: 6px;
++}
++
++.gate-panel button {
++  margin-top: 8px;
++  background: var(--accent);
++  color: #15171c;
++  border: none;
++  border-radius: 6px;
++  padding: 12px;
++  font-size: 15px;
++  font-weight: 600;
++  cursor: pointer;
++  transition: background 0.15s ease;
++}
++
++.gate-panel button:hover:not(:disabled) {
++  background: var(--accent-strong);
++}
++
++.gate-panel button:disabled {
++  opacity: 0.6;
++  cursor: default;
++}
++
++/* ---------- App shell ---------- */
++
+ .app {
+   min-height: 100vh;
+   display: flex;
+   flex-direction: column;
+-  background: #0f1115;
++  background: var(--bg);
+ }
+ 
+ .header {
+-  height: 76px;
+-  padding: 0 32px;
++  min-height: 72px;
++  padding: 14px 28px;
+   display: flex;
+   align-items: center;
+   justify-content: space-between;
+-  border-bottom: 1px solid #252932;
+-  background: #15171c;
++  border-bottom: 1px solid var(--border);
++  background: var(--surface);
++}
++
++.brand {
++  display: flex;
++  align-items: center;
++  gap: 12px;
++}
++
++.brand-mark {
++  font-size: 24px;
++  color: var(--accent);
+ }
+ 
+-.header h1 {
++.brand h1 {
+   margin: 0;
+-  font-size: 20px;
++  font-size: 17px;
++  font-weight: 600;
+ }
+ 
+-.header p {
+-  margin: 4px 0 0;
+-  color: #8d939f;
+-  font-size: 13px;
++.brand p {
++  margin: 2px 0 0;
++  font-size: 12px;
++  color: var(--text-muted);
++}
++
++.session {
++  display: flex;
++  align-items: center;
++  gap: 16px;
++}
++
++.session-id {
++  font-family: 'IBM Plex Mono', monospace;
++  font-size: 12px;
++  color: var(--text-muted);
++  background: var(--surface-raised);
++  border: 1px solid var(--border);
++  border-radius: 5px;
++  padding: 4px 8px;
+ }
+ 
+ .status {
+   display: flex;
+   align-items: center;
+-  gap: 8px;
+-  color: #9ca3af;
+-  font-size: 13px;
++  gap: 6px;
++  font-size: 12px;
++  color: var(--text-muted);
+ }
+ 
+ .status-dot {
+-  width: 8px;
+-  height: 8px;
++  width: 7px;
++  height: 7px;
+   border-radius: 50%;
+-  background: #22c55e;
++  background: var(--confirm);
++  box-shadow: 0 0 0 3px rgba(78, 205, 193, 0.18);
+ }
+ 
++/* ---------- Chat area ---------- */
++
+ .chat-container {
+   flex: 1;
+-  width: 100%;
+-  max-width: 900px;
+-  margin: 0 auto;
+-  padding: 40px 24px 140px;
++  overflow-y: auto;
++  padding: 28px 20px 12px;
+ }
+ 
+ .welcome {
++  max-width: 520px;
++  margin: 10vh auto 0;
+   text-align: center;
+-  margin-top: 100px;
+ }
+ 
+ .welcome h2 {
+-  font-size: 32px;
+-  margin-bottom: 10px;
++  margin: 0 0 8px;
++  font-size: 22px;
++  font-weight: 600;
+ }
+ 
+ .welcome p {
+-  color: #8d939f;
++  margin: 0 0 24px;
++  color: var(--text-muted);
++  font-size: 14px;
+ }
+ 
+ .examples {
+   display: flex;
+-  justify-content: center;
+-  flex-wrap: wrap;
+-  gap: 12px;
+-  margin-top: 28px;
++  flex-direction: column;
++  gap: 8px;
+ }
+ 
+ .examples button {
+-  padding: 12px 16px;
+-  border: 1px solid #30343d;
+-  border-radius: 10px;
+-  background: #181b21;
+-  color: #ddd;
++  background: var(--surface);
++  border: 1px solid var(--border);
++  border-left: 2px solid var(--accent);
++  border-radius: 6px;
++  padding: 12px 14px;
++  text-align: left;
++  font-size: 14px;
++  color: var(--text);
+   cursor: pointer;
++  transition: background 0.15s ease, border-color 0.15s ease;
+ }
+ 
+ .examples button:hover {
+-  background: #20242b;
++  background: var(--surface-raised);
+ }
+ 
+ .messages {
++  max-width: 640px;
++  margin: 0 auto;
+   display: flex;
+   flex-direction: column;
+-  gap: 18px;
++  gap: 10px;
+ }
+ 
+ .message-row {
+   display: flex;
++  animation: rise 0.2s ease;
++}
++
++@keyframes rise {
++  from {
++    opacity: 0;
++    transform: translateY(6px);
++  }
++  to {
++    opacity: 1;
++    transform: translateY(0);
++  }
+ }
+ 
+ .message-row.user {
+   justify-content: flex-end;
+ }
+ 
+-.message-row.assistant {
++.message-row.assistant,
++.message-row.system {
+   justify-content: flex-start;
+ }
+ 
+ .message-bubble {
+-  max-width: 75%;
+-  padding: 13px 16px;
+-  border-radius: 14px;
+-  white-space: pre-wrap;
++  max-width: 78%;
++  padding: 11px 14px;
++  border-radius: 8px;
++  font-size: 14.5px;
+   line-height: 1.5;
++  white-space: pre-wrap;
+ }
+ 
+-.user .message-bubble {
+-  background: #2563eb;
+-  color: white;
+-  border-bottom-right-radius: 4px;
++.message-row.user .message-bubble {
++  background: var(--surface-raised);
++  border: 1px solid var(--border);
+ }
+ 
+-.assistant .message-bubble {
+-  background: #1c2027;
+-  border: 1px solid #2b3039;
+-  color: #e5e7eb;
+-  border-bottom-left-radius: 4px;
++.message-row.assistant .message-bubble {
++  background: var(--surface);
++  border: 1px solid var(--border);
++  border-left: 2px solid var(--accent);
+ }
+ 
+-.typing {
+-  color: #9ca3af;
++.message-row.system .message-bubble {
++  background: rgba(232, 96, 76, 0.08);
++  border: 1px solid rgba(232, 96, 76, 0.25);
++  border-left: 2px solid var(--danger);
++  color: var(--danger);
++  font-size: 13.5px;
+ }
+ 
+-.input-area {
+-  position: fixed;
+-  bottom: 0;
+-  left: 0;
+-  right: 0;
+-
++.message-bubble.typing {
+   display: flex;
+-  gap: 12px;
++  gap: 4px;
++  align-items: center;
++  padding: 14px;
++}
+ 
+-  max-width: 900px;
+-  margin: 0 auto;
++.message-bubble.typing span {
++  width: 6px;
++  height: 6px;
++  border-radius: 50%;
++  background: var(--text-muted);
++  animation: blink 1.1s infinite ease-in-out;
++}
+ 
+-  padding: 18px 24px 24px;
+-  background: #0f1115;
++.message-bubble.typing span:nth-child(2) {
++  animation-delay: 0.15s;
+ }
+ 
+-.input-area textarea {
+-  flex: 1;
+-  resize: none;
++.message-bubble.typing span:nth-child(3) {
++  animation-delay: 0.3s;
++}
+ 
+-  padding: 14px 16px;
++@keyframes blink {
++  0%, 80%, 100% {
++    opacity: 0.25;
++  }
++  40% {
++    opacity: 1;
++  }
++}
+ 
+-  border: 1px solid #30343d;
+-  border-radius: 12px;
++/* ---------- Input area ---------- */
+ 
+-  background: #181b21;
+-  color: white;
++.input-area {
++  display: flex;
++  gap: 10px;
++  padding: 16px 20px 24px;
++  max-width: 680px;
++  margin: 0 auto;
++  width: 100%;
++}
+ 
++.input-area textarea {
++  flex: 1;
++  background: var(--surface);
++  border: 1px solid var(--border);
++  border-radius: 8px;
++  padding: 12px 14px;
++  font-size: 14.5px;
++  color: var(--text);
++  resize: none;
+   outline: none;
++  max-height: 140px;
++  transition: border-color 0.15s ease;
+ }
+ 
+ .input-area textarea:focus {
+-  border-color: #4b5563;
++  border-color: var(--accent);
+ }
+ 
+ .input-area button {
+-  width: 90px;
+-
++  background: var(--accent);
++  color: #15171c;
+   border: none;
+-  border-radius: 12px;
+-
+-  background: #2563eb;
+-  color: white;
+-
++  border-radius: 8px;
++  padding: 0 22px;
++  font-size: 14.5px;
++  font-weight: 600;
+   cursor: pointer;
++  transition: background 0.15s ease;
++}
++
++.input-area button:hover:not(:disabled) {
++  background: var(--accent-strong);
+ }
+ 
+ .input-area button:disabled {
+-  opacity: 0.5;
+-  cursor: not-allowed;
++  opacity: 0.45;
++  cursor: default;
+ }
+ 
+-@media (max-width: 700px) {
+-  .header {
+-    padding: 0 18px;
+-  }
++/* ---------- Accessibility & responsive ---------- */
+ 
+-  .chat-container {
+-    padding-left: 16px;
+-    padding-right: 16px;
+-  }
++:focus-visible {
++  outline: 2px solid var(--accent);
++  outline-offset: 2px;
++}
+ 
+-  .message-bubble {
+-    max-width: 90%;
++@media (prefers-reduced-motion: reduce) {
++  .message-row {
++    animation: none;
+   }
+-
+-  .examples {
+-    flex-direction: column;
++  .message-bubble.typing span {
++    animation: none;
++    opacity: 0.6;
+   }
++}
+ 
+-  .examples button {
+-    width: 100%;
++@media (max-width: 560px) {
++  .header {
++    padding: 12px 16px;
++  }
++  .session-id {
++    display: none;
++  }
++  .chat-container {
++    padding: 20px 14px 8px;
+   }
+-
+   .input-area {
+-    padding-left: 12px;
+-    padding-right: 12px;
++    padding: 12px 14px 20px;
+   }
+-}
+\ No newline at end of file
++}
+diff --git a/frontend/src/App.tsx b/frontend/src/App.tsx
+index 80cdacb..e55f18f 100644
+--- a/frontend/src/App.tsx
++++ b/frontend/src/App.tsx
+@@ -1,135 +1,186 @@
+-import { useState } from 'react'
++import { useEffect, useRef, useState } from 'react'
+ import './App.css'
++import { ApiError, requestToken, sendChatMessage } from './api'
+ 
+ type Message = {
+-  role: 'user' | 'assistant'
++  role: 'user' | 'assistant' | 'system'
+   content: string
+ }
+ 
++type Screen = 'identify' | 'chat'
++
++function makeThreadId() {
++  return `thread-${Math.random().toString(36).slice(2, 10)}`
++}
++
+ function App() {
++  const [screen, setScreen] = useState<Screen>('identify')
++
++  // Identify form
++  const [customerId, setCustomerId] = useState('')
++  const [email, setEmail] = useState('')
++  const [identifyError, setIdentifyError] = useState('')
++  const [verifying, setVerifying] = useState(false)
++
++  // Session
++  const [token, setToken] = useState('')
++  const [threadId] = useState(makeThreadId)
++
++  // Chat
+   const [message, setMessage] = useState('')
+   const [messages, setMessages] = useState<Message[]>([])
+-  const [loading, setLoading] = useState(false)
++  const [sending, setSending] = useState(false)
+ 
+-  const customerId = 'customer-002'
+-  const threadId = 'frontend-test-001'
++  const scrollAnchor = useRef<HTMLDivElement>(null)
+ 
+-  async function sendMessage() {
+-    if (!message.trim() || loading) return
+-
+-    const userMessage = message.trim()
++  useEffect(() => {
++    scrollAnchor.current?.scrollIntoView({ behavior: 'smooth' })
++  }, [messages, sending])
+ 
+-    setMessages((prev) => [
+-      ...prev,
+-      {
+-        role: 'user',
+-        content: userMessage,
+-      },
+-    ])
++  async function handleIdentify(event: React.FormEvent) {
++    event.preventDefault()
++    if (!customerId.trim() || !email.trim() || verifying) return
+ 
+-    setMessage('')
+-    setLoading(true)
++    setIdentifyError('')
++    setVerifying(true)
+ 
+     try {
+-      const response = await fetch('http://localhost:8000/chat', {
+-        method: 'POST',
+-        headers: {
+-          'Content-Type': 'application/json',
+-        },
+-        body: JSON.stringify({
+-          customer_id: customerId,
+-          thread_id: threadId,
+-          message: userMessage,
+-        }),
+-      })
+-
+-      if (!response.ok) {
+-        throw new Error('Failed to get response from server')
+-      }
++      const result = await requestToken(customerId.trim(), email.trim())
++      setToken(result.access_token)
++      setScreen('chat')
++    } catch (error) {
++      setIdentifyError(
++        error instanceof ApiError ? error.message : 'Something went wrong. Please try again.',
++      )
++    } finally {
++      setVerifying(false)
++    }
++  }
+ 
+-      const data = await response.json()
++  function returnToIdentify(noticeText: string) {
++    setToken('')
++    setScreen('identify')
++    setMessages([])
++    setIdentifyError(noticeText)
++  }
+ 
+-      setMessages((prev) => [
+-        ...prev,
+-        {
+-          role: 'assistant',
+-          content: data.response,
+-        },
+-      ])
+-    } catch (error) {
+-      console.error(error)
++  async function sendMessage() {
++    if (!message.trim() || sending) return
+ 
++    const userMessage = message.trim()
++    setMessages((prev) => [...prev, { role: 'user', content: userMessage }])
++    setMessage('')
++    setSending(true)
++
++    try {
++      const data = await sendChatMessage(token, threadId, userMessage)
++      setMessages((prev) => [...prev, { role: 'assistant', content: data.response }])
++    } catch (error) {
++      if (error instanceof ApiError && error.message === 'SESSION_EXPIRED') {
++        returnToIdentify('Your session expired. Please verify your details again.')
++        return
++      }
+       setMessages((prev) => [
+         ...prev,
+         {
+-          role: 'assistant',
++          role: 'system',
+           content:
+-            'Sorry, I could not connect to the customer support server.',
++            error instanceof ApiError
++              ? error.message
++              : 'Could not reach the support server. Please try again.',
+         },
+       ])
+     } finally {
+-      setLoading(false)
++      setSending(false)
+     }
+   }
+ 
+-  function handleKeyDown(
+-    event: React.KeyboardEvent<HTMLTextAreaElement>,
+-  ) {
++  function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+     if (event.key === 'Enter' && !event.shiftKey) {
+       event.preventDefault()
+       sendMessage()
+     }
+   }
+ 
++  if (screen === 'identify') {
++    return (
++      <div className="gate">
++        <form className="gate-panel" onSubmit={handleIdentify}>
++          <div className="gate-mark">⎔</div>
++          <h1>TechNest Support</h1>
++          <p className="gate-subtitle">Verify your details to start a session</p>
++
++          <label>
++            Customer ID
++            <input
++              value={customerId}
++              onChange={(e) => setCustomerId(e.target.value)}
++              placeholder="customer-002"
++              autoFocus
++            />
++          </label>
++
++          <label>
++            Email on file
++            <input
++              type="email"
++              value={email}
++              onChange={(e) => setEmail(e.target.value)}
++              placeholder="you@example.com"
++            />
++          </label>
++
++          {identifyError && <div className="gate-error">{identifyError}</div>}
++
++          <button type="submit" disabled={verifying}>
++            {verifying ? 'Verifying…' : 'Start session'}
++          </button>
++        </form>
++      </div>
++    )
++  }
++
+   return (
+     <div className="app">
+       <header className="header">
+-        <div>
+-          <h1>TechNest Support</h1>
+-          <p>AI Customer Support Assistant</p>
++        <div className="brand">
++          <span className="brand-mark">⎔</span>
++          <div>
++            <h1>TechNest Support</h1>
++            <p>AI customer support assistant</p>
++          </div>
+         </div>
+ 
+-        <div className="status">
+-          <span className="status-dot"></span>
+-          Online
++        <div className="session">
++          <span className="session-id">{customerId}</span>
++          <span className="status">
++            <span className="status-dot" />
++            connected
++          </span>
+         </div>
+       </header>
+ 
+       <main className="chat-container">
+         {messages.length === 0 && (
+           <div className="welcome">
+-            <h2>How can I help you?</h2>
+-            <p>
+-              Ask about your order, refund, or delivery address.
+-            </p>
++            <h2>How can I help?</h2>
++            <p>Ask about an order, a refund, or a delivery address.</p>
+ 
+             <div className="examples">
+-              <button
+-                onClick={() =>
+-                  setMessage('Where is my order 12346?')
+-                }
+-              >
+-                📦 Check order
++              <button onClick={() => setMessage('Where is my order 12346?')}>
++                Track an order
+               </button>
+-
+               <button
+                 onClick={() =>
+-                  setMessage(
+-                    'I want a refund for order 12349 because the product is defective.',
+-                  )
++                  setMessage('I want a refund for order 12345 because the product is defective.')
+                 }
+               >
+-                💰 Request refund
++                Request a refund
+               </button>
+-
+               <button
+-                onClick={() =>
+-                  setMessage(
+-                    'I want to change the delivery address of order 12346.',
+-                  )
+-                }
++                onClick={() => setMessage('I want to change the delivery address for order 12346.')}
+               >
+-                📍 Change address
++                Update delivery address
+               </button>
+             </div>
+           </div>
+@@ -137,45 +188,40 @@ function App() {
+ 
+         <div className="messages">
+           {messages.map((msg, index) => (
+-            <div
+-              key={index}
+-              className={`message-row ${msg.role}`}
+-            >
+-              <div className="message-bubble">
+-                {msg.content}
+-              </div>
++            <div key={index} className={`message-row ${msg.role}`}>
++              <div className="message-bubble">{msg.content}</div>
+             </div>
+           ))}
+ 
+-          {loading && (
++          {sending && (
+             <div className="message-row assistant">
+               <div className="message-bubble typing">
+-                Thinking...
++                <span />
++                <span />
++                <span />
+               </div>
+             </div>
+           )}
++
++          <div ref={scrollAnchor} />
+         </div>
+       </main>
+ 
+       <div className="input-area">
+         <textarea
+           value={message}
+-          onChange={(event) => setMessage(event.target.value)}
++          onChange={(e) => setMessage(e.target.value)}
+           onKeyDown={handleKeyDown}
+-          placeholder="Ask me about your order..."
++          placeholder="Ask about your order…"
+           rows={1}
+-          disabled={loading}
++          disabled={sending}
+         />
+-
+-        <button
+-          onClick={sendMessage}
+-          disabled={!message.trim() || loading}
+-        >
+-          {loading ? '...' : 'Send'}
++        <button onClick={sendMessage} disabled={!message.trim() || sending}>
++          Send
+         </button>
+       </div>
+     </div>
+   )
+ }
+ 
+-export default App
+\ No newline at end of file
++export default App
+diff --git a/frontend/src/api.ts b/frontend/src/api.ts
+new file mode 100644
+index 0000000..50c685a
+--- /dev/null
++++ b/frontend/src/api.ts
+@@ -0,0 +1,59 @@
++// Single place that knows where the backend lives. Locally this
++// defaults to the FastAPI dev server; in production (Docker, cloud)
++// set VITE_API_BASE_URL at build time instead of editing this file.
++export const API_BASE_URL =
++  import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
++
++export type TokenResponse = {
++  access_token: string;
++  token_type: string;
++  expires_in_minutes: number;
++};
++
++export class ApiError extends Error {}
++
++export async function requestToken(
++  customerId: string,
++  email: string,
++): Promise<TokenResponse> {
++  const response = await fetch(`${API_BASE_URL}/auth/token`, {
++    method: "POST",
++    headers: { "Content-Type": "application/json" },
++    body: JSON.stringify({ customer_id: customerId, email }),
++  });
++
++  if (!response.ok) {
++    const body = await response.json().catch(() => null);
++    throw new ApiError(
++      body?.detail || "Could not verify those details. Please check and try again.",
++    );
++  }
++
++  return response.json();
++}
++
++export async function sendChatMessage(
++  token: string,
++  threadId: string,
++  message: string,
++): Promise<{ thread_id: string; response: string }> {
++  const response = await fetch(`${API_BASE_URL}/chat`, {
++    method: "POST",
++    headers: {
++      "Content-Type": "application/json",
++      Authorization: `Bearer ${token}`,
++    },
++    body: JSON.stringify({ thread_id: threadId, message }),
++  });
++
++  if (response.status === 401) {
++    throw new ApiError("SESSION_EXPIRED");
++  }
++
++  if (!response.ok) {
++    const body = await response.json().catch(() => null);
++    throw new ApiError(body?.detail || "The assistant could not respond. Please try again.");
++  }
++
++  return response.json();
++}
+diff --git a/frontend/src/vite-env.d.ts b/frontend/src/vite-env.d.ts
+new file mode 100644
+index 0000000..17aa348
+--- /dev/null
++++ b/frontend/src/vite-env.d.ts
+@@ -0,0 +1,9 @@
++/// <reference types="vite/client" />
++
++interface ImportMetaEnv {
++  readonly VITE_API_BASE_URL?: string
++}
++
++interface ImportMeta {
++  readonly env: ImportMetaEnv
++}

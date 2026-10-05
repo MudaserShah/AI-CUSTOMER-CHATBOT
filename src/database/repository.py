@@ -1,22 +1,9 @@
-import psycopg
 import uuid
-from typing import Optional
 
+from src.database.base_repository import BaseRepository
 from src.database.db_utils import handle_db_errors
-from src.database.pool import get_pool
 
-class CustomerRepository:
-
-    def __init__(self, connection_uri: Optional[str] = None):
-        # connection_uri lets tests/scripts point at a different database
-        # by opening a direct connection instead of the shared pool.
-        # Normal app usage leaves this unset and uses the pool.
-        self._override_uri = connection_uri
-
-    def _get_connection(self):
-        if self._override_uri:
-            return psycopg.connect(self._override_uri)
-        return get_pool().connection()
+class CustomerRepository(BaseRepository):
 
     @handle_db_errors
     def create_customer(self, customer_id, name, email):

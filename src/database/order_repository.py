@@ -1,20 +1,9 @@
-import psycopg
 from datetime import datetime, timedelta, timezone
-from typing import Optional
-import uuid
 
+from src.database.base_repository import BaseRepository
 from src.database.db_utils import handle_db_errors
-from src.database.pool import get_pool
 
-class OrderRepository:
-
-    def __init__(self, connection_uri: Optional[str] = None):
-        self._override_uri = connection_uri
-
-    def _get_connection(self):
-        if self._override_uri:
-            return psycopg.connect(self._override_uri)
-        return get_pool().connection()
+class OrderRepository(BaseRepository):
 
     @handle_db_errors
     def get_order(self, order_id, customer_id):

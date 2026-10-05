@@ -1,20 +1,17 @@
 import uuid
-from typing import Optional
 
-import psycopg
-
+from src.database.base_repository import BaseRepository
 from src.database.db_utils import handle_db_errors
-from src.database.pool import get_pool
 
 
-class RefundRepository:
+class RefundRepository(BaseRepository):
 
     @handle_db_errors
     def get_existing_refund(
-    self,
-    customer_id: str,
-    order_id: str,
-):
+        self,
+        customer_id: str,
+        order_id: str,
+    ):
         with self._get_connection() as conn:
             with conn.cursor() as cur:
 
@@ -51,14 +48,6 @@ class RefundRepository:
                 "status": row[4],
                 "created_at": row[5],
             }
-
-    def __init__(self, connection_uri: Optional[str] = None):
-        self._override_uri = connection_uri
-
-    def _get_connection(self):
-        if self._override_uri:
-            return psycopg.connect(self._override_uri)
-        return get_pool().connection()
 
     @handle_db_errors
     def create_refund_request(
@@ -112,10 +101,10 @@ class RefundRepository:
 
     @handle_db_errors
     def get_refund_status(
-    self,
-    customer_id: str,
-    order_id: str,
-):
+        self,
+        customer_id: str,
+        order_id: str,
+    ):
         with self._get_connection() as conn:
             with conn.cursor() as cur:
 

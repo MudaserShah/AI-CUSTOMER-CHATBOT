@@ -1,0 +1,247 @@
+diff --git a/.dockerignore b/.dockerignore
+new file mode 100644
+index 0000000..ed84edd
+--- /dev/null
++++ b/.dockerignore
+@@ -0,0 +1,14 @@
++.git
++.github
++.venv
++venv
++__pycache__
++*.pyc
++.pytest_cache
++.ruff_cache
++tests/
++.env
++.env.example
++*.md
++uploads/
++markdown_files/
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 76d19ca..41d2ca7 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -64,3 +64,17 @@ jobs:
+ 
+       - name: Run tests
+         run: pytest -v
++
++  build-docker-image:
++    runs-on: ubuntu-latest
++    # Build-only verification that the Dockerfile still produces a
++    # working image — this does NOT push anywhere or deploy. Wiring an
++    # actual deploy step (to Railway, Fly, AWS, etc.) needs that
++    # platform's credentials stored as GitHub Actions secrets, which is
++    # an account-specific setup step for you to do when you pick a host
++    # — see DEPLOYMENT.md.
++    steps:
++      - uses: actions/checkout@v4
++
++      - name: Build image
++        run: docker build -t ai-customer-chatbot:ci .
+diff --git a/DEPLOYMENT.md b/DEPLOYMENT.md
+new file mode 100644
+index 0000000..0407757
+--- /dev/null
++++ b/DEPLOYMENT.md
+@@ -0,0 +1,90 @@
++# Deployment
++
++## Running locally with Docker Compose
++
++First time setup:
++
++```bash
++cp .env.example .env
++# fill in real values in .env — this file is what docker-compose reads
++# for everything except POSTGRES_URI/QDRANT_URL (see docker-compose.yml
++# for why those two are special-cased)
++
++docker compose build
++docker compose up -d postgres qdrant   # start just the databases first
++```
++
++Apply the database schema. Which command depends on whether this is a
++**fresh** Postgres (new volume, no data) or you're pointing at your
++**existing** database:
++
++```bash
++# Fresh database (new docker volume, e.g. first time ever running this):
++docker compose run --rm app alembic upgrade head
++
++# Existing database (tables already exist from before migrations existed):
++docker compose run --rm app alembic stamp head
++```
++
++See the migration file itself (`migrations/versions/..._baseline_schema...py`)
++for the full explanation of why these are different commands.
++
++Then start everything:
++
++```bash
++docker compose up -d
++curl http://localhost:8000/health
++```
++
++## Image size
++
++This image is larger than a typical FastAPI service because
++`langchain_huggingface` pulls in `sentence-transformers` and `torch`
++for local embeddings. If startup time or image size becomes a problem,
++the two usual fixes are: (1) switch `EMBEDDING_PROVIDER` to an API-based
++provider instead of a local model, or (2) use a CPU-only torch wheel
++explicitly pinned in requirements.txt instead of the default
++(GPU-capable) build, which is significantly smaller.
++
++## Secrets in production
++
++`.env` files are fine for local development — they are NOT fine to ship
++inside a production container image or commit anywhere. `.dockerignore`
++already excludes `.env` from the Docker build context so it can't end
++up baked into an image layer by accident, but you still need a real
++place for secrets to live in production. In rough order of how most
++small teams actually do this:
++
++- **Your hosting platform's built-in secret store** — Railway, Render,
++  Fly.io, and most PaaS providers let you set environment variables in
++  their dashboard/CLI, injected into the container at runtime. This is
++  almost always the right starting point: zero extra infrastructure.
++- **A dedicated secrets manager** (Doppler, AWS Secrets Manager, GCP
++  Secret Manager, HashiCorp Vault) — worth it once you have multiple
++  services/environments (staging + prod) sharing secrets, or need
++  rotation/audit logs. Overkill for a single service on day one.
++
++Whichever you pick, the app doesn't need to change: it already reads
++every secret from the environment via `src/rag/config.py`'s `Settings`
++class (see Phase 0 of the production-readiness report) — "where the
++environment variables come from" is a deploy-time concern, not a code
++concern.
++
++## CI
++
++`.github/workflows/ci.yml` lints, format-checks, runs migrations
++against a throwaway Postgres service container, runs the test suite,
++and verifies the Docker image still builds — on every push. It does
++not deploy anywhere yet. Wiring an actual deploy step means:
++
++1. Push this image to a registry (GitHub Container Registry is the
++   path of least resistance since it needs no extra account — just
++   `docker/build-push-action` with `GITHUB_TOKEN`, which Actions
++   already has).
++2. Tell your hosting platform to pull and run that image, or add a
++   platform-specific deploy action (e.g. Railway's, Fly's) to the
++   workflow, authenticated with an API token stored as a GitHub Actions
++   secret.
++
++This is deliberately left undone rather than guessed at, since it
++depends entirely on which platform you choose.
+diff --git a/Dockerfile b/Dockerfile
+new file mode 100644
+index 0000000..4e615c9
+--- /dev/null
++++ b/Dockerfile
+@@ -0,0 +1,47 @@
++# syntax=docker/dockerfile:1
++
++FROM python:3.13-slim AS base
++
++# Prevent Python from writing .pyc files / buffering stdout — makes
++# container logs show up immediately instead of being buffered.
++ENV PYTHONDONTWRITEBYTECODE=1 \
++    PYTHONUNBUFFERED=1 \
++    PIP_NO_CACHE_DIR=1
++
++WORKDIR /app
++
++# System packages needed to build a couple of Python deps (this project
++# pulls in langchain_huggingface -> sentence-transformers -> torch, and
++# tokenizers/tiktoken, some of which need a C compiler on certain
++# platforms even though most ship prebuilt wheels). Kept minimal and
++# removed from the final layer isn't possible in a single-stage build,
++# which is why this still ends up as a fairly large image — see
++# DEPLOYMENT.md for notes on trimming it further if that matters to you.
++RUN apt-get update && apt-get install -y --no-install-recommends \
++    build-essential \
++    && rm -rf /var/lib/apt/lists/*
++
++# Install dependencies first, separately from app code, so Docker's
++# layer cache skips this (slow, since it includes torch) whenever only
++# your source files change rather than requirements.txt.
++COPY requirements.txt .
++RUN pip install -r requirements.txt
++
++# Now copy the actual application.
++COPY src/ ./src/
++COPY migrations/ ./migrations/
++COPY alembic.ini .
++
++# Run as a non-root user — a container escape or dependency RCE
++# shouldn't hand the attacker root inside the container.
++RUN useradd --create-home --uid 1000 appuser \
++    && mkdir -p /app/uploads /app/markdown_files \
++    && chown -R appuser:appuser /app
++USER appuser
++
++EXPOSE 8000
++
++# No --reload here (that's dev-only and lives behind main.py's
++# `if __name__ == "__main__"` block, which this CMD bypasses entirely
++# by invoking uvicorn directly).
++CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+diff --git a/docker-compose.yml b/docker-compose.yml
+new file mode 100644
+index 0000000..3e27584
+--- /dev/null
++++ b/docker-compose.yml
+@@ -0,0 +1,50 @@
++services:
++  postgres:
++    image: postgres:16
++    environment:
++      POSTGRES_USER: ai_chatbot
++      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_in_your_env_file}
++      POSTGRES_DB: ai_customer_chatbot
++    ports:
++      - "5432:5432"
++    volumes:
++      - postgres_data:/var/lib/postgresql/data
++    healthcheck:
++      test: ["CMD-SHELL", "pg_isready -U ai_chatbot"]
++      interval: 5s
++      timeout: 5s
++      retries: 10
++
++  qdrant:
++    image: qdrant/qdrant:latest
++    ports:
++      - "6333:6333"
++    volumes:
++      - qdrant_data:/qdrant/storage
++
++  app:
++    build: .
++    ports:
++      - "8000:8000"
++    # Secrets and settings that don't change based on "am I in Docker or
++    # not" (API keys, JWT secret) come from your .env file as-is.
++    env_file:
++      - .env
++    # POSTGRES_URI and QDRANT_URL are the two exceptions: your .env
++    # points them at "localhost" for running the app directly on your
++    # machine, but inside Docker's network "localhost" means the app
++    # container itself, not the postgres/qdrant containers — so these
++    # two are overridden here to use the service names above instead.
++    # Everything else in .env passes through unchanged.
++    environment:
++      POSTGRES_URI: postgresql://ai_chatbot:${POSTGRES_PASSWORD:-changeme_in_your_env_file}@postgres:5432/ai_customer_chatbot
++      QDRANT_URL: http://qdrant:6333
++    depends_on:
++      postgres:
++        condition: service_healthy
++      qdrant:
++        condition: service_started
++
++volumes:
++  postgres_data:
++  qdrant_data:

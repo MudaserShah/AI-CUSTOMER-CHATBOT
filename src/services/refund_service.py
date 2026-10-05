@@ -1,6 +1,10 @@
+import logging
+
 from src.database.order_repository import OrderRepository
 from src.database.refund_repository import RefundRepository
 from psycopg.errors import UniqueViolation
+
+logger = logging.getLogger(__name__)
 
 
 class RefundService:
@@ -32,6 +36,10 @@ class RefundService:
         )
 
         if order is None:
+            logger.warning(
+                "Refund rejected (order not found): customer_id=%s order_id=%s",
+                customer_id, order_id,
+            )
             return {
                 "status": "rejected",
                 "order_id": order_id,
@@ -45,6 +53,10 @@ class RefundService:
         )
 
         if not eligibility["eligible"]:
+            logger.info(
+                "Refund rejected (not eligible: %s): customer_id=%s order_id=%s",
+                eligibility["reason"], customer_id, order_id,
+            )
             return {
                 "status": "rejected",
                 "order_id": order_id,
@@ -60,6 +72,10 @@ class RefundService:
         )
 
         if existing_refund is not None:
+            logger.info(
+                "Refund already exists: customer_id=%s order_id=%s refund_id=%s",
+                customer_id, order_id, existing_refund["id"],
+            )
             return {
                 "status": "already_exists",
                 "refund_request_id": existing_refund["id"],
@@ -82,6 +98,14 @@ class RefundService:
     )
 
         except UniqueViolation:
+            # Race condition: another request created the refund between
+            # our check above and this insert. Not an error — treat it
+            # the same as "already exists".
+            logger.info(
+                "Refund creation hit a race condition, treating as already_exists: "
+                "customer_id=%s order_id=%s",
+                customer_id, order_id,
+            )
             existing_refund = (
               self.refund_repository.get_existing_refund(
             customer_id,
@@ -102,6 +126,11 @@ class RefundService:
         }
 
             raise
+
+        logger.info(
+            "Refund request submitted: customer_id=%s order_id=%s refund_id=%s",
+            customer_id, order_id, refund_request["id"],
+        )
 
         return {
             "status": "submitted",

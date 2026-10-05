@@ -13,6 +13,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from langchain_openrouter import ChatOpenRouter
 from qdrant_client import QdrantClient
 
+from src.agent.agent import close_agent_checkpointer
 from src.database.pool import init_pool, close_pool
 from src.rag.api_logic import app_state
 from src.rag.config import settings
@@ -45,9 +46,9 @@ async def lifespan(app: FastAPI):
     # logger.info("Connecting to OpenAI LLM...")
     # app_state["llm"] = ChatOpenAI(model=settings.llm_model, temperature=0, api_key=settings.openai_api_key)
     
-    logger.info("Connecting to OpenRouter LLM...")
+    logger.info("Connecting to OpenRouter LLM (%s)...", settings.llm_model)
     app_state["llm"] = ChatOpenRouter(
-    model="openrouter/free",
+    model=settings.llm_model,
     temperature=0,
     )
 
@@ -56,6 +57,7 @@ async def lifespan(app: FastAPI):
 
     app_state.clear()
     close_pool()
+    close_agent_checkpointer()
     logger.info("Server shut down.")
 
 
@@ -84,6 +86,16 @@ app.include_router(router)
 app.include_router(auth_router)
 app.include_router(refund_router)
 app.include_router(chat_router)
+
+
+@app.get("/health", tags=["Health"])
+def health_check():
+    """Liveness/readiness check for load balancers and uptime monitors.
+    Deliberately does not touch the database or any external service —
+    a slow DB shouldn't make the load balancer think the whole process
+    is dead. If you need a DB-aware check too, add a separate
+    /health/db endpoint rather than making this one do double duty."""
+    return {"status": "ok"}
 
 if __name__ == "__main__":
     import uvicorn

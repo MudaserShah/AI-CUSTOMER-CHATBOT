@@ -99,6 +99,25 @@ def upgrade() -> None:
     op.create_index("ix_refund_requests_customer_id", "refund_requests", ["customer_id"])
     op.create_index("ix_refund_requests_order_id", "refund_requests", ["order_id"])
 
+    # src/services/refund_service.py explicitly catches UniqueViolation
+    # as an expected race-condition outcome when two requests try to
+    # create a refund for the same order at once — that only works if
+    # the database actually enforces uniqueness. A plain UNIQUE
+    # constraint would block ever re-requesting a refund after it's
+    # rejected/completed, so this is a PARTIAL unique index: only one
+    # pending/approved refund request can exist per (customer, order)
+    # at a time, matching the check in create_refund_request().
+    # VERIFY this matches your real database — if your live DB has a
+    # different constraint (or none at all), the race-condition
+    # handling in refund_service.py silently does nothing.
+    op.create_index(
+        "uq_refund_requests_active_per_order",
+        "refund_requests",
+        ["customer_id", "order_id"],
+        unique=True,
+        postgresql_where=sa.text("status IN ('pending', 'approved')"),
+    )
+
 
 def downgrade() -> None:
     op.drop_table("refund_requests")

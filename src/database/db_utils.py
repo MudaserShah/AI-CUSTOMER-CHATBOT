@@ -19,6 +19,7 @@ import functools
 import logging
 
 import psycopg
+from psycopg.errors import UniqueViolation
 
 from src.database.errors import DatabaseError
 
@@ -30,6 +31,14 @@ def handle_db_errors(func):
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
+        except UniqueViolation:
+            # Not an infrastructure failure — this is expected, handled
+            # business logic (e.g. src/services/refund_service.py
+            # specifically catches UniqueViolation to treat a duplicate
+            # refund request as "already exists" instead of an error).
+            # Re-raise unchanged so that existing handling keeps working;
+            # only genuinely unexpected DB errors become DatabaseError.
+            raise
         except psycopg.Error as exc:
             logger.exception("Database error in %s", func.__qualname__)
             raise DatabaseError(
