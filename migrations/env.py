@@ -20,7 +20,12 @@ from src.rag.config import settings  # noqa: E402
 config = context.config
 
 # Override whatever is in alembic.ini with the real URL from settings.
-config.set_main_option("sqlalchemy.url", settings.postgres_uri)
+database_url = settings.postgres_uri
+if database_url.startswith("postgresql://"):
+    database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+elif database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql+psycopg://", 1)
+config.set_main_option("sqlalchemy.url", database_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

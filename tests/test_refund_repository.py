@@ -83,13 +83,13 @@ def test_create_refund_request():
 
     result = repo.create_refund_request(
         customer_id="customer-002",
-        order_id="88888",
+        order_id="77777",
         reason="Product is defective",
     )
 
     assert result is not None
     assert result["customer_id"] == "customer-002"
-    assert result["order_id"] == "88888"
+    assert result["order_id"] == "77777"
     assert result["reason"] == "Product is defective"
     assert result["status"] == "pending"
     assert result["id"] is not None

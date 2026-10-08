@@ -29,7 +29,7 @@ jobs:
       POSTGRES_URI: postgresql://postgres:postgres@localhost:5432/ai_customer_chatbot_ci
       JWT_SECRET: ci-test-secret-not-for-production
       JWT_EXPIRY_MINUTES: "60"
-      CORS_ALLOWED_ORIGINS: "http://localhost:5173"
+      CORS_ALLOWED_ORIGINS: ""
       OPENROUTER_API_KEY: ci-placeholder
       QDRANT_URL: http://localhost:6333
       QDRANT_API_KEY: ci-placeholder
@@ -47,6 +47,10 @@ jobs:
           pip install -r requirements.txt
           pip install black ruff pytest
 
+      # These two run but don't block the pipeline yet — this codebase
+      # has pre-existing lint/format debt (see pyproject.toml's [tool.ruff]
+      # comment). Remove `continue-on-error` once that debt is paid down,
+      # so lint failures actually block merges the way they should.
       - name: Lint (ruff)
         run: ruff check .
         continue-on-error: true
@@ -61,25 +65,14 @@ jobs:
       - name: Run tests
         run: pytest -v
 
-  frontend-build:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - name: Install frontend dependencies
-        run: npm ci
-      - name: Build frontend
-        run: npm run build
-
   build-docker-image:
     runs-on: ubuntu-latest
+    # Build-only verification that the Dockerfile still produces a
+    # working image — this does NOT push anywhere or deploy. Wiring an
+    # actual deploy step (to Railway, Fly, AWS, etc.) needs that
+    # platform's credentials stored as GitHub Actions secrets, which is
+    # an account-specific setup step for you to do when you pick a host
+    # — see DEPLOYMENT.md.
     steps:
       - uses: actions/checkout@v4
 

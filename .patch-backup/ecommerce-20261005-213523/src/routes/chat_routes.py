@@ -11,7 +11,10 @@ from src.schemas.chat_schemas import ChatRequest, ChatResponse
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/chat", tags=["Chat"])
+router = APIRouter(
+    prefix="/chat",
+    tags=["Chat"],
+)
 
 
 @retry(
@@ -21,17 +24,23 @@ router = APIRouter(prefix="/chat", tags=["Chat"])
     reraise=True,
 )
 def _invoke_agent(customer_id: str, message: str, thread_id: str):
-    scoped_thread_id = f"customer:{customer_id}:thread:{thread_id}"
+    """Call the LLM/agent graph with a short retry for transient failures
+    (e.g. the model provider briefly rate-limiting or timing out).
+    Three attempts with short backoff; if it still fails, the caller
+    decides how to respond to the client — see the except block below."""
     return app.invoke(
         {
             "customer_id": customer_id,
             "messages": [{"role": "user", "content": message}],
         },
-        config={"configurable": {"thread_id": scoped_thread_id}},
+        config={"configurable": {"thread_id": thread_id}},
     )
 
 
-@router.post("", response_model=ChatResponse)
+@router.post(
+    "",
+    response_model=ChatResponse,
+)
 @limiter.limit("20/minute")
 def chat(
     request: Request,
@@ -45,13 +54,13 @@ def chat(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="We're having trouble reaching our systems right now. Please try again shortly.",
-        ) from None
+        )
     except Exception:
         logger.exception("LLM/agent call failed for customer_id=%s", customer_id)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="The assistant is temporarily unavailable. Please try again in a moment.",
-        ) from None
+        )
 
     return {
         "thread_id": body.thread_id,

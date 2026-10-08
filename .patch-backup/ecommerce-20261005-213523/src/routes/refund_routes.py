@@ -1,20 +1,32 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from src.auth.dependencies import get_current_customer_id
 from src.database.errors import DatabaseError
 from src.rate_limit import limiter
-from src.schemas.refund_schemas import RefundRequest, RefundResponse
+from src.schemas.refund_schemas import (
+    RefundRequest,
+    RefundResponse,
+)
+
 from src.services.refund_service import RefundService
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/refund", tags=["Refund"])
+router = APIRouter(
+    prefix="/refund",
+    tags=["Refund"],
+)
+
+
 refund_service = RefundService()
 
 
-@router.post("", response_model=RefundResponse)
+@router.post(
+    "",
+    response_model=RefundResponse,
+)
 @limiter.limit("10/minute")
 def create_refund(
     request: Request,
@@ -25,21 +37,23 @@ def create_refund(
         return refund_service.create_refund_request(
             customer_id=customer_id,
             order_id=body.order_id,
-            reason=body.reason.strip(),
+            reason=body.reason,
         )
     except DatabaseError:
         logger.exception("Database error while creating refund for customer_id=%s", customer_id)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="We're having trouble reaching our systems right now. Please try again shortly.",
-        ) from None
+        )
 
-
-@router.get("/{order_id}", response_model=RefundResponse)
+@router.get(
+    "/{order_id}",
+    response_model=RefundResponse,
+)
 @limiter.limit("30/minute")
 def get_refund_status(
     request: Request,
-    order_id: str = Path(..., pattern=r"^[0-9]{5}$"),
+    order_id: str,
     customer_id: str = Depends(get_current_customer_id),
 ):
     try:
@@ -52,7 +66,7 @@ def get_refund_status(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="We're having trouble reaching our systems right now. Please try again shortly.",
-        ) from None
+        )
 
     if result is None:
         return {

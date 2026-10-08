@@ -1,4 +1,18 @@
-"""FastAPI dependencies for authenticated and optional-auth routes."""
+"""
+FastAPI dependency for authenticated routes.
+
+Usage in a route:
+
+    @router.post("")
+    def chat(request: ChatRequest, customer_id: str = Depends(get_current_customer_id)):
+        ...
+
+customer_id no longer comes from the request body/query string — it is
+derived from a verified JWT in the Authorization header. A route that
+depends on get_current_customer_id cannot be called successfully
+without a valid token, and the customer_id it receives cannot be
+spoofed by the caller.
+"""
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -8,10 +22,11 @@ _bearer_scheme = HTTPBearer(
     scheme_name="BearerAuth",
     description="Paste the access token obtained from POST /auth/token",
 )
-_optional_bearer_scheme = HTTPBearer(auto_error=False)
 
 
-def _decode_credentials(credentials: HTTPAuthorizationCredentials) -> str:
+def get_current_customer_id(
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
+) -> str:
     try:
         return decode_access_token(credentials.credentials)
     except InvalidTokenError as exc:
@@ -20,17 +35,3 @@ def _decode_credentials(credentials: HTTPAuthorizationCredentials) -> str:
             detail=f"Invalid or expired token: {exc}",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
-
-
-def get_current_customer_id(
-    credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
-) -> str:
-    return _decode_credentials(credentials)
-
-
-def get_optional_current_customer_id(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_optional_bearer_scheme),
-) -> str | None:
-    if credentials is None:
-        return None
-    return _decode_credentials(credentials)
