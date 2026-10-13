@@ -28,33 +28,53 @@ router = APIRouter(
     tags=["Auth"],
 )
 
+from src.database.repository import CustomerRepository
+
 verification_service = VerificationService()
+customer_repo = CustomerRepository()
 
 
 @router.post("/token", response_model=TokenResponse)
 def issue_token(request: TokenRequest):
-    result = verification_service.verify_customer(
-        customer_id=request.customer_id,
-        provided_email=request.email,
-    )
+    target_customer_id = request.customer_id
+    customer_name = None
 
-    if not result["verified"]:
-        # Deliberately not logging the email they tried — it's PII and
-        # of limited debugging value; customer_id + outcome is enough.
-        logger.warning(
-            "Token issuance rejected: customer_id=%s reason=%s",
-            request.customer_id, result["reason"],
+    if not target_customer_id:
+        record = customer_repo.get_customer_by_email(request.email)
+        if not record:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="No customer found with this email address.",
+            )
+        target_customer_id = record[1]
+        customer_name = record[2]
+    else:
+        result = verification_service.verify_customer(
+            customer_id=target_customer_id,
+            provided_email=request.email,
         )
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=result["reason"],
-        )
+        if not result["verified"]:
+            logger.warning(
+                "Token issuance rejected: customer_id=%s reason=%s",
+                target_customer_id, result["reason"],
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=result["reason"],
+            )
+        record = customer_repo.get_customer(target_customer_id)
+        if record:
+            customer_name = record[2]
 
-    logger.info("Token issued: customer_id=%s", request.customer_id)
+    logger.info("Token issued: customer_id=%s", target_customer_id)
 
-    token = create_access_token(customer_id=request.customer_id)
+    token = create_access_token(customer_id=target_customer_id)
 
     return TokenResponse(
         access_token=token,
+        customer_id=target_customer_id,
+        name=customer_name or "Customer",
+        email=request.email,
         expires_in_minutes=settings.jwt_expiry_minutes,
     )
+

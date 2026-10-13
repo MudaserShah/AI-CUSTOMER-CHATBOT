@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>External Client Website — AI Chatbot Embed Demo</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f8fafc;
+      color: #1e293b;
+    }
+    header {
+      background: #ffffff;
+      padding: 20px 40px;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .logo {
+      font-size: 20px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .hero {
+      max-width: 900px;
+      margin: 60px auto;
+      padding: 0 20px;
+      text-align: center;
+    }
+    .hero h1 {
+      font-size: 42px;
+      font-weight: 800;
+      margin-bottom: 16px;
+      color: #0f172a;
+    }
+    .hero p {
+      font-size: 18px;
+      color: #64748b;
+      line-height: 1.6;
+    }
+    .card {
+      background: #ffffff;
+      padding: 30px;
+      border-radius: 16px;
+      margin-top: 40px;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+      text-align: left;
+    }
+    pre {
+      background: #0f172a;
+      color: #38bdf8;
+      padding: 16px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 14px;
+    }
+    .badge {
+      display: inline-block;
+      background: #dbeafe;
+      color: #1e40af;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">Acme Clothing Store</div>
+    <div>Any External Website</div>
+  </header>
+
+  <main class="hero">
+    <span class="badge">Decoupled Embed Demonstration</span>
+    <h1>Embeddable AI Customer Chatbot</h1>
+    <p>
+      This webpage represents any external client website (Shopify, WordPress, Webflow, or a custom site).
+      The AI chatbot below is 100% decoupled and runs completely isolated in a Shadow DOM via a single script tag!
+    </p>
+
+    <div class="card">
+      <h3>How This Website Connected The Bot:</h3>
+      <p style="margin: 10px 0; color: #64748b;">Simply pasted this script tag into the HTML:</p>
+      <pre><code>&lt;script 
+  src="/static/widget.js" 
+  data-project-id="technest-default" 
+  data-api-url=""&gt;
+&lt;/script&gt;</code></pre>
+    </div>
+  </main>
+
+  <!-- Embed the decoupled chatbot widget -->
+  <script 
+    src="/static/widget.js" 
+    data-project-id="technest-default" 
+    data-api-url="">
+  </script>
+</body>
+</html>

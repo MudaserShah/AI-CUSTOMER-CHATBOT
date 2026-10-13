@@ -56,6 +56,33 @@ PRODUCTS = [
         "currency": "USD",
         "image_emoji": "🔊",
     },
+    {
+        "id": "tee",
+        "name": "The Heavyweight Tee",
+        "description": "A considered everyday essential. Heavyweight cotton, relaxed boxy fit, vintage-inspired garment wash.",
+        "category": "T-shirts",
+        "unit_price": Decimal("48.00"),
+        "currency": "USD",
+        "image_emoji": "👕",
+    },
+    {
+        "id": "hoodie",
+        "name": "Essential Oversized Hoodie",
+        "description": "Your off-duty uniform. A generous oversized silhouette in soft heavyweight cotton, finished with a structured hood.",
+        "category": "Hoodies",
+        "unit_price": Decimal("95.00"),
+        "currency": "USD",
+        "image_emoji": "🧥",
+    },
+    {
+        "id": "cargo",
+        "name": "Utility Cargo Pants",
+        "description": "Made for the everyday. A wide-leg silhouette, functional cargo pockets, and durable washed cotton.",
+        "category": "Pants",
+        "unit_price": Decimal("85.00"),
+        "currency": "USD",
+        "image_emoji": "👖",
+    },
 ]
 
 _PRODUCT_INDEX = {product["id"]: product for product in PRODUCTS}

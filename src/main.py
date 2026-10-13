@@ -23,6 +23,8 @@ from src.routes.refund_routes import router as refund_router
 from src.routes.chat_routes import router as chat_router
 from src.routes.order_routes import router as order_router
 from src.routes.store_routes import router as store_router
+from src.routes.project_routes import router as project_router
+from src.routes.widget_routes import router as widget_router
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(message)s")
 logger = logging.getLogger(__name__)
@@ -75,9 +77,10 @@ app.add_middleware(SlowAPIMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(router)
@@ -86,6 +89,15 @@ app.include_router(store_router)
 app.include_router(order_router)
 app.include_router(refund_router)
 app.include_router(chat_router)
+app.include_router(project_router)
+app.include_router(widget_router)
+
+
+from fastapi.staticfiles import StaticFiles
+
+static_dir = Path(__file__).resolve().parent / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 
 @app.get("/health", tags=["Health"])

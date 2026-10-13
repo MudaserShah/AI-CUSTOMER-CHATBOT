@@ -20,11 +20,12 @@ router = APIRouter(prefix="/chat", tags=["Chat"])
     retry=retry_if_exception_type(Exception),
     reraise=True,
 )
-def _invoke_agent(customer_id: str, message: str, thread_id: str):
-    scoped_thread_id = f"customer:{customer_id}:thread:{thread_id}"
+def _invoke_agent(customer_id: str, message: str, thread_id: str, project_id: str = "technest-default"):
+    scoped_thread_id = f"project:{project_id}:customer:{customer_id}:thread:{thread_id}"
     return app.invoke(
         {
             "customer_id": customer_id,
+            "project_id": project_id,
             "messages": [{"role": "user", "content": message}],
         },
         config={"configurable": {"thread_id": scoped_thread_id}},
@@ -39,7 +40,15 @@ def chat(
     customer_id: str = Depends(get_current_customer_id),
 ):
     try:
-        result = _invoke_agent(customer_id, body.message, body.thread_id)
+        try:
+            result = _invoke_agent(
+                customer_id,
+                body.message,
+                body.thread_id,
+                body.project_id,
+            )
+        except TypeError:
+            result = _invoke_agent(customer_id, body.message, body.thread_id)
     except DatabaseError:
         logger.exception("Database error while handling chat for customer_id=%s", customer_id)
         raise HTTPException(
@@ -56,4 +65,6 @@ def chat(
     return {
         "thread_id": body.thread_id,
         "response": result["messages"][-1].content,
+        "project_id": body.project_id,
     }
+

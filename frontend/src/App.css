@@ -102,8 +102,8 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .checkout-form, .checkout-summary, .order-card, .empty-state { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; }
 .checkout-form { padding: 26px; }
 .checkout-form label { display: block; color: var(--muted); font-size: 12px; margin-top: 17px; }
-.checkout-form input, .checkout-form textarea, .refund-box textarea, .chat-input-row input { width: 100%; margin-top: 7px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 10px; padding: 12px 13px; outline: none; }
-.checkout-form input:focus, .checkout-form textarea:focus, .refund-box textarea:focus, .chat-input-row input:focus { border-color: var(--accent); }
+.checkout-form input, .checkout-form textarea, .refund-box textarea { width: 100%; margin-top: 7px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 10px; padding: 12px 13px; outline: none; }
+.checkout-form input:focus, .checkout-form textarea:focus, .refund-box textarea:focus:focus { border-color: var(--accent); }
 .checkout-form small { display: block; margin-top: 5px; color: #6e737e; }
 .form-footnote { color: #737883; font-size: 11px; line-height: 1.5; }
 .checkout-summary { padding: 22px; position: sticky; top: 96px; }
@@ -156,31 +156,6 @@ code { color: var(--accent); font-family: "IBM Plex Mono", monospace; font-size:
 .loading-spinner { width: 28px; height: 28px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; margin: 0 auto 12px; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.chat-launcher { position: fixed; right: 24px; bottom: 24px; z-index: 55; display: flex; align-items: center; gap: 8px; border: 1px solid rgba(232,163,58,.45); background: #17130e; color: var(--text); padding: 10px 13px; border-radius: 999px; box-shadow: var(--shadow); }
-.chat-launcher span { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; background: var(--accent); color: #1a150e; font-size: 9px; font-weight: 900; }
-.chat-launcher strong { font-size: 12px; }
-.chat-panel { position: fixed; right: 24px; bottom: 82px; z-index: 60; width: min(390px, calc(100vw - 30px)); height: min(620px, calc(100vh - 110px)); display: grid; grid-template-rows: auto 1fr auto; background: #0f1013; border: 1px solid var(--border); border-radius: 20px; box-shadow: 0 30px 90px rgba(0,0,0,.55); overflow: hidden; }
-.chat-head { padding: 17px 18px; display: flex; justify-content: space-between; align-items: start; border-bottom: 1px solid var(--border); background: var(--surface); }
-.chat-head h3 { margin: 6px 0 3px; font-size: 16px; }
-.chat-head small { color: var(--muted); font-size: 10px; }
-.icon-button { width: 31px; height: 31px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-2); color: var(--muted); font-size: 20px; line-height: 1; }
-.icon-button:hover { color: var(--text); }
-.chat-body { padding: 15px; overflow: auto; }
-.chat-welcome { text-align: center; padding: 28px 8px 15px; }
-.chat-avatar { width: 54px; height: 54px; margin: 0 auto 12px; display: grid; place-items: center; border-radius: 17px; background: var(--accent); color: #16130e; font-weight: 900; }
-.chat-welcome h4 { margin: 0 0 7px; font-size: 15px; }
-.chat-welcome p { color: var(--muted); line-height: 1.5; font-size: 12px; }
-.chat-prompts { display: grid; gap: 7px; margin-top: 15px; }
-.chat-prompts button { text-align: left; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 9px; padding: 10px 11px; font-size: 11px; }
-.chat-prompts button:hover { border-color: var(--accent); }
-.chat-messages { display: flex; flex-direction: column; gap: 9px; }
-.chat-msg { max-width: 86%; padding: 10px 11px; border-radius: 12px; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
-.chat-msg.user { align-self: end; background: var(--accent); color: #17120b; border-bottom-right-radius: 4px; }
-.chat-msg.assistant { align-self: start; background: var(--surface-2); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
-.chat-input-row { display: flex; gap: 8px; padding: 11px; border-top: 1px solid var(--border); background: var(--surface); }
-.chat-input-row input { margin: 0; }
-.chat-input-row button { width: 42px; border: 0; border-radius: 10px; background: var(--accent); color: #17120b; font-weight: 900; }
-
 .overlay { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.55); }
 .cart-drawer { position: fixed; right: 0; top: 0; bottom: 0; z-index: 65; width: min(420px, 100vw); background: var(--surface); border-left: 1px solid var(--border); padding: 22px; display: flex; flex-direction: column; box-shadow: -30px 0 80px rgba(0,0,0,.35); }
 .drawer-head { display: flex; justify-content: space-between; align-items: start; }
@@ -222,6 +197,4 @@ code { color: var(--accent); font-family: "IBM Plex Mono", monospace; font-size:
   .trust-strip { grid-template-columns: 1fr; padding-inline: 14px; }
   .trust-strip div, .trust-strip div:nth-child(3) { border-left: 0; margin: 0; padding: 11px 0; border-top: 1px solid var(--border); }
   .trust-strip div:first-child { border-top: 0; }
-  .chat-panel { right: 10px; bottom: 74px; width: calc(100vw - 20px); }
-  .chat-launcher { right: 12px; bottom: 12px; }
 }

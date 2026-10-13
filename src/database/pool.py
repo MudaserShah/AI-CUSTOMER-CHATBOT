@@ -54,5 +54,8 @@ def close_pool() -> None:
     global _pool
     with _lock:
         if _pool is not None:
-            _pool.close()
+            try:
+                _pool.close(timeout=3.0)
+            except Exception:
+                pass
             _pool = None

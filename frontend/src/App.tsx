@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "./App.css";
+import ChatPanel, { type ChatMessage } from "./ChatPanel";
+import ProjectManager from "./ProjectManager";
 import {
   ApiError,
   type Product,
@@ -13,8 +15,7 @@ import {
   sendChatMessage,
 } from "./api";
 
-type View = "shop" | "checkout" | "orders";
-type ChatMessage = { role: "user" | "assistant"; content: string };
+type View = "shop" | "checkout" | "orders" | "saas";
 type Session = {
   accessToken: string;
   customerId: string;
@@ -24,6 +25,20 @@ type Session = {
 
 const SESSION_KEY = "technest-session";
 const THREAD_KEY = "technest-chat-thread";
+const MESSAGES_KEY = "technest-chat-messages";
+
+function makeMessage(role: ChatMessage["role"], content: string, error = false): ChatMessage {
+  return { id: crypto.randomUUID(), role, content, time: Date.now(), error: error || undefined };
+}
+
+function loadMessages(threadId: string): ChatMessage[] {
+  try {
+    const raw = localStorage.getItem(`${MESSAGES_KEY}:${threadId}`);
+    return raw ? (JSON.parse(raw) as ChatMessage[]) : [];
+  } catch {
+    return [];
+  }
+}
 
 function money(value: string | number, currency = "USD") {
   return new Intl.NumberFormat("en-US", {
@@ -47,7 +62,7 @@ function newThreadId() {
 }
 
 function App() {
-  const [view, setView] = useState<View>("shop");
+  const [view, setView] = useState<View>("saas");
   const [products, setProducts] = useState<Product[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
   const [productsError, setProductsError] = useState("");
@@ -79,13 +94,13 @@ function App() {
   const [deliveryAddress, setDeliveryAddress] = useState("");
 
   const [chatOpen, setChatOpen] = useState(false);
-  const [chatMessage, setChatMessage] = useState("");
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [chatSending, setChatSending] = useState(false);
   const [threadId, setThreadId] = useState(() => {
     return localStorage.getItem(THREAD_KEY) || newThreadId();
   });
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() =>
+    loadMessages(localStorage.getItem(THREAD_KEY) || ""),
+  );
+  const [chatSending, setChatSending] = useState(false);
 
   const [refundOrderId, setRefundOrderId] = useState<string | null>(null);
   const [refundReason, setRefundReason] = useState("");
@@ -128,8 +143,12 @@ function App() {
   }, [session]);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatMessages, chatSending]);
+    try {
+      localStorage.setItem(`${MESSAGES_KEY}:${threadId}`, JSON.stringify(chatMessages.slice(-100)));
+    } catch {
+      /* storage full or unavailable — chat still works in memory */
+    }
+  }, [chatMessages, threadId]);
 
   const cartItems = useMemo(
     () =>
@@ -250,11 +269,11 @@ function App() {
     setSignInError("");
     setSignInLoading(true);
     try {
-      const result = await requestToken(signInCustomerId.trim(), signInEmail.trim());
+      const result = await requestToken(signInCustomerId.trim() || undefined, signInEmail.trim());
       const nextSession: Session = {
         accessToken: result.access_token,
-        customerId: signInCustomerId.trim(),
-        name: customerName.trim() || "Customer",
+        customerId: result.customer_id || signInCustomerId.trim() || "customer",
+        name: result.name || customerName.trim() || "Customer",
         email: signInEmail.trim(),
       };
       localStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
@@ -277,6 +296,7 @@ function App() {
     setSession(null);
     setOrders([]);
     setCheckoutResult(null);
+    localStorage.removeItem(`${MESSAGES_KEY}:${threadId}`);
     setChatMessages([]);
     setChatOpen(false);
     setThreadId(newThreadId());
@@ -296,10 +316,10 @@ function App() {
       setChatOpen(true);
       setChatMessages((current) => [
         ...current,
-        {
-          role: "assistant",
-          content: `Refund request for order ${order.order_id} has been submitted. You can also ask me for its status anytime.`,
-        },
+        makeMessage(
+          "assistant",
+          `Your refund request for order #${order.order_id} has been submitted. ✅\n\nYou can ask me for its status anytime.`,
+        ),
       ]);
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
@@ -314,20 +334,19 @@ function App() {
     }
   }
 
-  async function sendMessage(text = chatMessage) {
+  async function sendMessage(text: string, retry = false) {
     const clean = text.trim();
     if (!session || !clean || chatSending) return;
 
-    setChatMessages((current) => [...current, { role: "user", content: clean }]);
-    setChatMessage("");
+    setChatMessages((current) => {
+      const base = retry ? current.filter((m, i) => !(m.error && i === current.length - 1)) : current;
+      return retry ? base : [...base, makeMessage("user", clean)];
+    });
     setChatSending(true);
 
     try {
       const data = await sendChatMessage(session.accessToken, threadId, clean);
-      setChatMessages((current) => [
-        ...current,
-        { role: "assistant", content: data.response },
-      ]);
+      setChatMessages((current) => [...current, makeMessage("assistant", data.response)]);
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         logout();
@@ -335,24 +354,27 @@ function App() {
       }
       setChatMessages((current) => [
         ...current,
-        {
-          role: "assistant",
-          content:
-            error instanceof Error
-              ? error.message
-              : "The assistant is temporarily unavailable.",
-        },
+        makeMessage(
+          "assistant",
+          error instanceof Error ? error.message : "The assistant is temporarily unavailable.",
+          true,
+        ),
       ]);
     } finally {
       setChatSending(false);
     }
   }
 
-  function handleChatKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      sendMessage();
-    }
+  function retryLast() {
+    const lastUser = [...chatMessages].reverse().find((m) => m.role === "user");
+    if (lastUser) void sendMessage(lastUser.content, true);
+  }
+
+  function newChat() {
+    if (chatSending) return;
+    localStorage.removeItem(`${MESSAGES_KEY}:${threadId}`);
+    setChatMessages([]);
+    setThreadId(newThreadId());
   }
 
   function askAboutOrder(orderId: string) {
@@ -376,45 +398,107 @@ function App() {
   return (
     <div className="storefront">
       <header className="site-header">
-        <button className="brand" type="button" onClick={() => setView("shop")}>
-          <span className="brand-icon">TN</span>
-          <span>
-            <strong>TechNest</strong>
-            <small>Electronics</small>
-          </span>
-        </button>
-
-        <nav className="nav-links" aria-label="Primary">
-          <button type="button" className={view === "shop" ? "active" : ""} onClick={() => setView("shop")}>
-            Shop
-          </button>
-          <button
-            type="button"
-            className={view === "orders" ? "active" : ""}
-            onClick={() => {
-              setView("orders");
-              if (session) loadOrders(session.accessToken);
-            }}
-          >
-            My orders
-          </button>
-        </nav>
-
-        <div className="header-actions">
-          {session && <span className="customer-chip">ID {session.customerId}</span>}
-          <button type="button" className="cart-button" onClick={() => setCartOpen(true)}>
-            Cart <span>{cartCount}</span>
-          </button>
-          {session ? (
-            <button className="signout" type="button" onClick={logout}>
-              Sign out
+        {view === "saas" ? (
+          <>
+            <button className="brand" type="button" onClick={() => setView("saas")}>
+              <span className="brand-icon" style={{ background: "#2563eb", color: "#fff" }}>AI</span>
+              <span>
+                <strong>AgentCraft</strong>
+                <small>AI Chatbot Platform</small>
+              </span>
             </button>
-          ) : (
-            <button className="signout" type="button" onClick={() => { setSignInError(""); setSignInOpen(true); }}>
-              Sign in
+
+            <nav className="nav-links" aria-label="Primary">
+              <button
+                type="button"
+                className="active"
+                onClick={() => setView("saas")}
+                style={{ fontWeight: 600 }}
+              >
+                SaaS Projects & Bots
+              </button>
+              <button
+                type="button"
+                onClick={() => setView("shop")}
+                style={{ fontWeight: 600, color: "#f59e0b" }}
+              >
+                🛒 Open Demo Store (TechNest)
+              </button>
+            </nav>
+
+            <div className="header-actions">
+              <a
+                href="http://localhost:8000/static/demo_client.html"
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: "8px",
+                  background: "#1e293b",
+                  color: "#38bdf8",
+                  fontSize: "13px",
+                  fontWeight: "600",
+                  textDecoration: "none",
+                }}
+              >
+                External Client Demo ↗
+              </a>
+            </div>
+          </>
+        ) : (
+          <>
+            <button className="brand" type="button" onClick={() => setView("shop")}>
+              <span className="brand-icon">TN</span>
+              <span>
+                <strong>TechNest</strong>
+                <small>Demo Electronics Store</small>
+              </span>
             </button>
-          )}
-        </div>
+
+            <nav className="nav-links" aria-label="Primary">
+              <button
+                type="button"
+                onClick={() => setView("saas")}
+                style={{ fontWeight: 700, color: "#2563eb" }}
+              >
+                ← Back to SaaS Dashboard
+              </button>
+              <button type="button" className={view === "shop" ? "active" : ""} onClick={() => setView("shop")}>
+                Shop
+              </button>
+              <button
+                type="button"
+                className={view === "orders" ? "active" : ""}
+                onClick={() => {
+                  setView("orders");
+                  if (session) loadOrders(session.accessToken);
+                }}
+              >
+                My orders
+              </button>
+            </nav>
+
+            <div className="header-actions">
+              {session && (
+                <span className="customer-chip" title={`Customer ID: ${session.customerId}`}>
+                  👤 {session.name || session.email}
+                </span>
+              )}
+              <button type="button" className="cart-button" onClick={() => setCartOpen(true)}>
+                Cart <span>{cartCount}</span>
+              </button>
+              {session ? (
+                <button className="signout" type="button" onClick={logout}>
+                  Sign out
+                </button>
+              ) : (
+                <button className="signout" type="button" onClick={() => { setSignInError(""); setSignInOpen(true); }}>
+                  Sign in
+                </button>
+              )}
+            </div>
+          </>
+        )}
       </header>
 
       {view === "shop" && (
@@ -654,50 +738,31 @@ function App() {
         </main>
       )}
 
-      <button className="chat-launcher" type="button" onClick={openChat} aria-label="Open AI support">
-        <span>AI</span>
-        <strong>Support</strong>
-      </button>
-
-      {chatOpen && (
-        <div className="chat-panel">
-          <div className="chat-head">
-            <div>
-              <span className="eyebrow">TECHNEST AI</span>
-              <h3>Customer support</h3>
-              {session && <small>Secure session · {session.customerId}</small>}
-            </div>
-            <button type="button" className="icon-button" onClick={() => setChatOpen(false)} aria-label="Close assistant">×</button>
-          </div>
-
-          <div className="chat-body">
-            {!chatMessages.length && (
-              <div className="chat-welcome">
-                <div className="chat-avatar">AI</div>
-                <h4>What can I help with?</h4>
-                <p>I can use your authenticated customer context to look up orders and manage refund requests.</p>
-                <div className="chat-prompts">
-                  <button type="button" onClick={() => sendMessage("Show me my latest order.")}>Show my latest order</button>
-                  <button type="button" onClick={() => sendMessage("Do I have a refund request?")}>Check my refund</button>
-                  <button type="button" onClick={() => sendMessage("What is your refund policy?")}>Refund policy</button>
-                </div>
-              </div>
-            )}
-            {chatMessages.map((message, index) => (
-              <div className={`chat-message ${message.role}`} key={`${message.role}-${index}`}>
-                <div>{message.content}</div>
-              </div>
-            ))}
-            {chatSending && <div className="chat-message assistant"><div className="typing-dots"><span /><span /><span /></div></div>}
-            <div ref={chatEndRef} />
-          </div>
-
-          <div className="chat-input-row">
-            <input value={chatMessage} onChange={(event) => setChatMessage(event.target.value)} onKeyDown={handleChatKeyDown} placeholder="Ask about your order…" disabled={chatSending || !session} />
-            <button type="button" onClick={() => sendMessage()} disabled={!chatMessage.trim() || chatSending || !session}>→</button>
-          </div>
-        </div>
+      {view === "saas" && (
+        <main>
+          <ProjectManager />
+        </main>
       )}
+
+      {!chatOpen && (
+        <button className="chat-launcher" type="button" onClick={openChat} aria-label="Open AI support">
+          <span>AI</span>
+          <strong>Chat with support</strong>
+        </button>
+      )}
+
+      <ChatPanel
+        open={chatOpen}
+        messages={chatMessages}
+        sending={chatSending}
+        customerId={session?.customerId}
+        customerName={session?.name}
+        disabled={!session}
+        onSend={(text) => void sendMessage(text)}
+        onClose={() => setChatOpen(false)}
+        onNewChat={newChat}
+        onRetry={retryLast}
+      />
 
       {signInOpen && (
         <div className="overlay" onClick={() => setSignInOpen(false)}>
@@ -711,18 +776,23 @@ function App() {
             </div>
             <form className="checkout-form auth-form" onSubmit={handleSignIn}>
               <label>
-                Customer ID
-                <input required value={signInCustomerId} onChange={(event) => setSignInCustomerId(event.target.value)} placeholder="customer-a1b2c3d4e5f6" />
-              </label>
-              <label>
-                Email
-                <input required type="email" value={signInEmail} onChange={(event) => setSignInEmail(event.target.value)} placeholder="you@example.com" />
+                Your Account Email Address
+                <input
+                  required
+                  type="email"
+                  value={signInEmail}
+                  onChange={(event) => setSignInEmail(event.target.value)}
+                  placeholder="you@example.com"
+                  autoFocus
+                />
               </label>
               {signInError && <div className="notice error">{signInError}</div>}
               <button className="primary-button full" disabled={signInLoading} type="submit">
-                {signInLoading ? "Signing in…" : "Continue"}
+                {signInLoading ? "Signing in…" : "Sign In with Email"}
               </button>
-              <p className="form-footnote">For this demo, the Customer ID is the stable customer identity generated during your first checkout.</p>
+              <p className="form-footnote">
+                Enter the email address used during your order. Your account and orders are automatically retrieved without needing any customer ID.
+              </p>
             </form>
           </div>
         </div>

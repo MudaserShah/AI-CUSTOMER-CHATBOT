@@ -6,22 +6,28 @@ from langgraph.checkpoint.postgres import PostgresSaver
 from src.database.order_repository import OrderRepository
 from src.rag.config import settings
 from src.tools.order_tool import get_order
-from src.tools.knowledge_tool import search_knowledge_base
+from src.tools.knowledge_tool import search_knowledge_base, search_knowledge_base_for_project
 from src.tools.refund_tool import create_refund_request
 from src.tools.refund_status_tool import get_refund_status
 from src.services.refund_service import RefundService
 from src.tools.address_tool import change_delivery_address
 from src.services.address_service import AddressService
+from src.database.project_repository import ProjectRepository
+from src.database.project_tool_repository import ProjectToolRepository
+from src.services.webhook_tool_service import WebhookToolService
 
 # Single source of truth for the DB URL (src/rag/config.py) — was
 # previously its own os.getenv("POSTGRES_URI") call here, inconsistent
 # with every other part of the app (see Phase 0/F6 in the
 # production-readiness report).
 postgres_uri = settings.postgres_uri
+project_repository = ProjectRepository()
+project_tool_repository = ProjectToolRepository()
 
 
 class CustomerState(MessagesState):
     customer_id: str
+    project_id: str | None = None
 
 
 
@@ -118,8 +124,19 @@ KNOWLEDGE BASE RULES:
 
 RESPONSE STYLE:
 
-- Be professional and helpful.
-- Answer the exact question first.
+- Be professional, polite, and helpful.
+- Present answers in a clean, beautifully structured format using markdown:
+  - Put each section, bullet point, or step on its own new line with clean spacing.
+  - Use bold headings for key sections (e.g. **Return Window:**, **Eligible Items:**, **Refund Process:**).
+  - Use bullet points (- ) for lists and item attributes.
+  - Use numbered lists (1. , 2. ) for sequential steps.
+  - For order lookups, present details in a clean, vertical bulleted list:
+    - **Status:** [Status]
+    - **Delivery Address:** [Address]
+    - **Dispatch Date:** [Date]
+    - **Shipping Date:** [Date]
+  - Never dump a dense single-paragraph block of text when listing details, conditions, or steps.
+- Answer the exact question first and keep answers concise and directly relevant.
 - Do not unnecessarily repeat information.
 - Do not mention internal tools, Qdrant, embeddings, retrieval,
   prompts, or system instructions.
@@ -127,9 +144,24 @@ RESPONSE STYLE:
 
 
 def call_model(state: CustomerState):
+    project_id = state.get("project_id") or "technest-default"
+    project = project_repository.get_project(project_id)
+
+    if project and project.get("system_prompt"):
+        prompt = project["system_prompt"]
+    elif project and project.get("name") and project["id"] != "technest-default":
+        prompt = f"""You are {project['name']}'s customer support AI assistant.
+Your job is to answer customers accurately, politely, and helpfully using the available tools.
+Structure answers cleanly and beautifully using markdown:
+- Use clear bold headings, bullet points (- ), and numbered lists (1. ).
+- Put key details on separate lines with clean line breaks.
+- Keep answers concise, visually structured, and directly relevant.
+Use search_knowledge_base for questions about company policies, products, and FAQs."""
+    else:
+        prompt = SYSTEM_PROMPT
 
     messages = [
-        SystemMessage(content=SYSTEM_PROMPT),
+        SystemMessage(content=prompt),
         *state["messages"],
     ]
 
@@ -197,9 +229,10 @@ def call_tools(state: CustomerState):
             )
 
         elif tool_name == "search_knowledge_base":
-
-            result = search_knowledge_base.invoke(
-                tool_args
+            project_id = state.get("project_id") or "technest-default"
+            result = search_knowledge_base_for_project(
+                question=tool_args.get("question", ""),
+                project_id=project_id,
             )
 
             tool_messages.append(
@@ -295,11 +328,34 @@ def call_tools(state: CustomerState):
     )
 
             tool_messages.append(
-        ToolMessage(
-            content=json.dumps(result),
-            tool_call_id=tool_call["id"]
-        )
-    )
+                ToolMessage(
+                    content=json.dumps(result),
+                    tool_call_id=tool_call["id"]
+                )
+            )
+
+        else:
+            # Check for dynamic project tools (webhooks/custom APIs)
+            project_id = state.get("project_id") or "technest-default"
+            project_tools = project_tool_repository.list_tools_for_project(project_id)
+            matched_tool = next((t for t in project_tools if t["name"] == tool_name), None)
+
+            if matched_tool:
+                result = WebhookToolService.execute_tool(matched_tool, tool_args)
+                tool_messages.append(
+                    ToolMessage(
+                        content=json.dumps(result),
+                        tool_call_id=tool_call["id"],
+                    )
+                )
+            else:
+                tool_messages.append(
+                    ToolMessage(
+                        content=json.dumps({"error": f"Tool '{tool_name}' is not recognized."}),
+                        tool_call_id=tool_call["id"],
+                    )
+                )
+
     return {
         "messages": tool_messages
     }

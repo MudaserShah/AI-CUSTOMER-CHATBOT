@@ -85,6 +85,9 @@ export type ChatResponse = {
 
 export type TokenResponse = {
   access_token: string;
+  customer_id?: string;
+  name?: string;
+  email?: string;
   token_type: string;
   expires_in_minutes: number;
 };
@@ -115,11 +118,15 @@ export async function getProducts(): Promise<Product[]> {
   return parseResponse(response);
 }
 
-export async function requestToken(customerId: string, email: string): Promise<TokenResponse> {
+export async function requestToken(customerId: string | undefined, email: string): Promise<TokenResponse> {
+  const payload: Record<string, string> = { email: email.trim() };
+  if (customerId && customerId.trim()) {
+    payload.customer_id = customerId.trim();
+  }
   const response = await fetch(`${API_BASE_URL}/auth/token`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ customer_id: customerId, email }),
+    body: JSON.stringify(payload),
   });
   return parseResponse(response);
 }
@@ -199,3 +206,111 @@ export async function sendChatMessage(
 
   return parseResponse(response);
 }
+
+export type Project = {
+  id: string;
+  name: string;
+  slug: string;
+  api_key: string;
+  system_prompt: string | null;
+  llm_model: string | null;
+  widget_title: string;
+  widget_greeting: string;
+  primary_color: string;
+  created_at: string;
+};
+
+export type DocumentItem = {
+  doc_id: string;
+  file_name: string;
+  file_type: string;
+  total_chunks: number;
+  total_pages: number;
+  upload_timestamp: string;
+  status: string;
+};
+
+export type ProjectTool = {
+  id: string;
+  project_id: string;
+  name: string;
+  description: string;
+  method: string;
+  endpoint_url: string;
+  headers: Record<string, string>;
+  parameters_schema: Record<string, any>;
+  created_at: string;
+};
+
+export async function listProjects(): Promise<Project[]> {
+  const response = await fetch(`${API_BASE_URL}/projects`);
+  return parseResponse(response);
+}
+
+export async function createProject(payload: Partial<Project>): Promise<Project> {
+  const response = await fetch(`${API_BASE_URL}/projects`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return parseResponse(response);
+}
+
+export async function updateProject(projectId: string, payload: Partial<Project>): Promise<Project> {
+  const response = await fetch(`${API_BASE_URL}/projects/${projectId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return parseResponse(response);
+}
+
+export async function listProjectDocs(projectId: string): Promise<DocumentItem[]> {
+  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/documents`);
+  const data = await parseResponse(response);
+  return data.documents || [];
+}
+
+export async function uploadProjectDocs(projectId: string, files: FileList | File[]): Promise<any> {
+  const formData = new FormData();
+  for (let i = 0; i < files.length; i++) {
+    formData.append("files", files[i]);
+  }
+  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/documents/upload`, {
+    method: "POST",
+    body: formData,
+  });
+  return parseResponse(response);
+}
+
+export async function deleteProjectDoc(projectId: string, docId: string): Promise<any> {
+  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/documents/${docId}`, {
+    method: "DELETE",
+  });
+  return parseResponse(response);
+}
+
+export async function listProjectTools(projectId: string): Promise<ProjectTool[]> {
+  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/tools`);
+  return parseResponse(response);
+}
+
+export async function createProjectTool(
+  projectId: string,
+  tool: { name: string; description: string; method: string; endpoint_url: string }
+): Promise<ProjectTool> {
+  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/tools`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(tool),
+  });
+  return parseResponse(response);
+}
+
+export async function deleteProjectTool(projectId: string, toolId: string): Promise<any> {
+  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/tools/${toolId}`, {
+    method: "DELETE",
+  });
+  return parseResponse(response);
+}
+

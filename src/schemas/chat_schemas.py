@@ -19,9 +19,16 @@ class ChatRequest(BaseModel):
         description="Customer message",
     )
 
+    project_id: str = Field(
+        default="technest-default",
+        description="Project identifier",
+    )
+
 
 class ChatResponse(BaseModel):
 
     thread_id: str
 
     response: str
+
+    project_id: str = "technest-default"

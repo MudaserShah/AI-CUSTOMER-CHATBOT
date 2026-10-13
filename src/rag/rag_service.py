@@ -117,6 +117,11 @@ def ensure_collection(
         field_name="doc_id",
         field_schema=PayloadSchemaType.KEYWORD,
     )
+    client.create_payload_index(
+        collection_name=collection_name,
+        field_name="project_id",
+        field_schema=PayloadSchemaType.KEYWORD,
+    )
 
 def index_document(
     file_path: str,
@@ -126,6 +131,7 @@ def index_document(
     collection_name: str,
     uploads_dir: str,
     markdown_dir: str,
+    project_id: str = "technest-default",
 ) -> dict:
     """
     Complete document indexing pipeline.
@@ -289,6 +295,8 @@ def index_document(
             collection_ready = True
 
         payload = {
+            "project_id": project_id,
+
             "file_name": file_name,
 
             "file_type": extension.lstrip("."),
@@ -353,6 +361,7 @@ def retrieve_with_citations(
     client: QdrantClient,
     embeddings,
     collection_name: str,
+    project_id: str = None,
 ) -> dict:
     """
     RETRIEVAL-ONLY half of the pipeline.
@@ -392,9 +401,16 @@ def retrieve_with_citations(
         question
     )
 
+    query_filter = None
+    if project_id:
+        query_filter = Filter(
+            must=[FieldCondition(key="project_id", match=MatchValue(value=project_id))]
+        )
+
     results = client.query_points(
         collection_name=collection_name,
         query=query_vector,
+        query_filter=query_filter,
         limit=top_k,
         with_payload=True,
         with_vectors=False,
@@ -547,6 +563,7 @@ def query_with_citations(
     embeddings,
     llm: ChatOpenRouter,
     collection_name: str,
+    project_id: str = None,
 ) -> dict:
     """
     Full pipeline — unchanged behavior/signature/return shape.
@@ -560,6 +577,7 @@ def query_with_citations(
         client=client,
         embeddings=embeddings,
         collection_name=collection_name,
+        project_id=project_id,
     )
 
     if retrieval["done"]:
@@ -783,6 +801,7 @@ Answer:
 def list_documents(
     client: QdrantClient,
     collection_name: str,
+    project_id: str = None,
 ) -> list:
     """
     Return one document entry per doc_id.
@@ -801,10 +820,17 @@ def list_documents(
 
     offset = None
 
+    scroll_filter = None
+    if project_id:
+        scroll_filter = Filter(
+            must=[FieldCondition(key="project_id", match=MatchValue(value=project_id))]
+        )
+
     while True:
 
         records, next_offset = client.scroll(
             collection_name=collection_name,
+            scroll_filter=scroll_filter,
             limit=100,
             offset=offset,
             with_payload=True,
@@ -871,6 +897,7 @@ def delete_document(
     doc_id: str,
     client: QdrantClient,
     collection_name: str,
+    project_id: str = None,
 ) -> int:
     """
     Delete all chunks belonging to a document.
@@ -885,16 +912,25 @@ def delete_document(
         return 0
 
     # Find all chunks having this doc_id.
-    document_filter = Filter(
-        must=[
+    conditions = [
+        FieldCondition(
+            key="doc_id",
+            match=MatchValue(
+                value=doc_id
+            ),
+        )
+    ]
+    if project_id:
+        conditions.append(
             FieldCondition(
-                key="doc_id",
+                key="project_id",
                 match=MatchValue(
-                    value=doc_id
+                    value=project_id
                 ),
             )
-        ]
-    )
+        )
+
+    document_filter = Filter(must=conditions)
 
     # Count chunks first.
     count_result = client.count(
